@@ -1,0 +1,16 @@
+[package]
+name = "colossus-auth"
+version = "0.1.0"
+edition = "2021"
+description = "Authentik + Axum authentication integration for Colossus applications"
+
+[dependencies]
+async-trait = "0.1"
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+axum = { workspace = true }
