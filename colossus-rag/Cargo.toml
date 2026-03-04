@@ -1,0 +1,34 @@
+[package]
+name = "colossus-rag"
+version = "0.1.0"
+edition = "2021"
+description = "RAG pipeline library for Colossus applications — types, traits, and implementations"
+
+# --- Core dependencies (types + traits only) ---
+# Rig integration deps (rig-core, rig-qdrant, rig-fastembed) are NOT added here.
+# They will be added in T-R.2 behind feature flags.
+
+[dependencies]
+async-trait = "0.1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+# --- Feature flags ---
+# These are PLACEHOLDERS. The actual dependencies behind each flag
+# will be added in future tasks. Defining them now lets us write
+# #[cfg(feature = "...")] gates in our code structure.
+#
+# Consumers will eventually write:
+#   colossus-rag = { path = "../colossus-rs/colossus-rag", features = ["full"] }
+
+[features]
+default = []
+neo4j = []        # T-R.3: GraphExpander backed by Neo4j
+fastembed = []     # T-R.2: VectorRetriever with rig-fastembed embeddings
+axum = []          # Future: Axum handler integration (extractors, routes)
+full = ["neo4j", "fastembed", "axum"]

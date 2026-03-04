@@ -12,3 +12,9 @@ Cargo.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# ML model caches (fastembed downloads ~500MB ONNX models)
+.fastembed_cache/
+
+# Spike (throwaway validation code — delete after T-R.0)
+spike/

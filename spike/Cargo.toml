@@ -1,0 +1,23 @@
+[package]
+name = "spike"
+version = "0.0.1"
+edition = "2021"
+description = "Throwaway spike: validate rig-core + rig-qdrant + rig-fastembed compatibility"
+publish = false
+
+# NOTE: All rig deps are LOCAL to this crate — not in workspace [dependencies].
+# This keeps the spike isolated and easy to delete later.
+
+[dependencies]
+rig-core = "0.31"
+rig-qdrant = "0.1"
+rig-fastembed = "0.2"
+qdrant-client = { version = "1.14", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
