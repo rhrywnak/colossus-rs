@@ -95,6 +95,7 @@ mod expander_queries;
 // The router, assembler, and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
 mod assembler;
+mod pipeline;
 mod router;
 mod synthesizer;
 
@@ -145,5 +146,6 @@ pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 pub use expander::Neo4jExpander;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
+pub use pipeline::{RagPipeline, RagPipelineBuilder};
 pub use router::RuleBasedRouter;
 pub use synthesizer::RigSynthesizer;
