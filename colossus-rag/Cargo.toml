@@ -32,6 +32,11 @@ rig-fastembed = { version = "0.2", optional = true }
 # default-features = false avoids pulling in snapshot download utils.
 qdrant-client = { version = "1.14", default-features = false, optional = true }
 
+# neo4rs: async Neo4j Bolt driver for graph expansion.
+# Used by Neo4jExpander to traverse knowledge graph relationships.
+# Version 0.8 matches colossus-legal/backend.
+neo4rs = { version = "0.8", optional = true }
+
 [dev-dependencies]
 tokio = { workspace = true }
 
@@ -44,6 +49,6 @@ tokio = { workspace = true }
 default = []
 qdrant = ["dep:qdrant-client"]     # T-R.2.1: Qdrant vector search via gRPC
 fastembed = ["dep:rig-fastembed"]   # T-R.2.1: Local embeddings via rig-fastembed
-neo4j = []                          # T-R.3: GraphExpander backed by Neo4j (placeholder)
+neo4j = ["dep:neo4rs"]               # T-R.3: GraphExpander backed by Neo4j
 axum = []                           # Future: Axum handler integration (placeholder)
 full = ["neo4j", "fastembed", "qdrant", "axum"]

@@ -47,7 +47,7 @@
 //! |---------|-------------|--------|
 //! | `qdrant` | Qdrant vector search via gRPC | T-R.2.1 |
 //! | `fastembed` | Local embeddings via rig-fastembed | T-R.2.1 |
-//! | `neo4j` | Enables GraphExpander with Neo4j | Planned (T-R.3) |
+//! | `neo4j` | Enables GraphExpander with Neo4j | T-R.3.1 |
 //! | `axum` | Enables Axum handler integration | Planned |
 //! | `full` | Enables all features | Available |
 //!
@@ -82,6 +82,15 @@ mod types;
 // when both features are enabled."
 #[cfg(all(feature = "qdrant", feature = "fastembed"))]
 mod retriever;
+
+// The Neo4j expander module requires the `neo4j` feature.
+// Split into two files to stay under the 300-line code limit:
+// - expander.rs: struct, trait impl, helpers, conversion
+// - expander_queries.rs: 7 per-type Cypher expansion functions
+#[cfg(feature = "neo4j")]
+mod expander;
+#[cfg(feature = "neo4j")]
+mod expander_queries;
 
 // The assembler and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
@@ -130,6 +139,9 @@ pub use noop::{NoOpExpander, NoOpRouter};
 
 #[cfg(all(feature = "qdrant", feature = "fastembed"))]
 pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
+
+#[cfg(feature = "neo4j")]
+pub use expander::Neo4jExpander;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
 pub use synthesizer::RigSynthesizer;
