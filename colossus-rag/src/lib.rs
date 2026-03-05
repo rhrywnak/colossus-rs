@@ -45,10 +45,13 @@
 //!
 //! | Feature | Description | Status |
 //! |---------|-------------|--------|
-//! | `fastembed` | Enables VectorRetriever with rig-fastembed | Planned (T-R.2) |
+//! | `qdrant` | Qdrant vector search via gRPC | T-R.2.1 |
+//! | `fastembed` | Local embeddings via rig-fastembed | T-R.2.1 |
 //! | `neo4j` | Enables GraphExpander with Neo4j | Planned (T-R.3) |
 //! | `axum` | Enables Axum handler integration | Planned |
-//! | `full` | Enables all features | Planned |
+//! | `full` | Enables all features | Available |
+//!
+//! Enable both `qdrant` and `fastembed` (or just `full`) to get `QdrantRetriever`.
 //!
 //! ## Rust Learning: Crate organization
 //!
@@ -69,6 +72,39 @@ mod noop;
 mod traits;
 mod types;
 
+// --- Feature-gated modules ---
+
+// ## Rust Learning: `#[cfg(all(...))]` for multi-feature gates
+//
+// The retriever module requires BOTH the `qdrant` and `fastembed` features
+// because it uses qdrant-client for search AND rig-fastembed for embedding.
+// `#[cfg(all(feature = "a", feature = "b"))]` means "compile this only
+// when both features are enabled."
+#[cfg(all(feature = "qdrant", feature = "fastembed"))]
+mod retriever;
+
+// The synthesizer module uses rig-core's Anthropic provider, which is a base
+// dependency (not feature-gated). No cfg gate needed — it's always available.
+mod synthesizer;
+
+// ## Rust Learning: `compile_error!` for helpful diagnostics
+//
+// If someone enables only ONE of the two required features, they'd get
+// confusing "type not found" errors. Instead, we detect the mismatch at
+// compile time and produce a clear error message explaining what's needed.
+//
+// `any(...)` matches if EITHER feature is on.
+// `not(all(...))` matches if BOTH are NOT on simultaneously.
+// Together: "one is on but not both" → helpful error.
+#[cfg(any(
+    all(feature = "qdrant", not(feature = "fastembed")),
+    all(feature = "fastembed", not(feature = "qdrant")),
+))]
+compile_error!(
+    "QdrantRetriever requires both `qdrant` and `fastembed` features. \
+     Enable both: features = [\"qdrant\", \"fastembed\"] or features = [\"full\"]"
+);
+
 // --- Public API re-exports: Error ---
 
 pub use error::RagError;
@@ -88,3 +124,10 @@ pub use traits::{ContextAssembler, GraphExpander, QueryRouter, Synthesizer, Vect
 // --- Public API re-exports: No-op implementations ---
 
 pub use noop::{NoOpExpander, NoOpRouter};
+
+// --- Public API re-exports: Feature-gated implementations ---
+
+#[cfg(all(feature = "qdrant", feature = "fastembed"))]
+pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
+
+pub use synthesizer::RigSynthesizer;

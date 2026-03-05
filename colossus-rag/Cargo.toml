@@ -4,31 +4,46 @@ version = "0.1.0"
 edition = "2021"
 description = "RAG pipeline library for Colossus applications — types, traits, and implementations"
 
-# --- Core dependencies (types + traits only) ---
-# Rig integration deps (rig-core, rig-qdrant, rig-fastembed) are NOT added here.
-# They will be added in T-R.2 behind feature flags.
+# --- Core dependencies (always included) ---
 
 [dependencies]
 async-trait = "0.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = "2"
+tokio = { workspace = true }
 tracing = { workspace = true }
+
+# --- Rig framework: embedding model trait definitions ---
+# rig-core is a base dependency because QdrantRetriever calls
+# EmbeddingModel::embed_text(), which is defined in rig-core.
+# Even with feature-gated retriever code, the trait import comes from here.
+rig-core = "0.31"
+
+# --- Optional dependencies (behind feature flags) ---
+
+# rig-fastembed: local ONNX-based embedding (nomic-embed-text v1.5).
+# Wraps the fastembed crate behind Rig's EmbeddingModel trait.
+rig-fastembed = { version = "0.2", optional = true }
+
+# qdrant-client: gRPC client for Qdrant vector database.
+# We use this directly (NOT rig-qdrant) for full control over
+# search parameters, payload access, and filter construction.
+# default-features = false avoids pulling in snapshot download utils.
+qdrant-client = { version = "1.14", default-features = false, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 
 # --- Feature flags ---
-# These are PLACEHOLDERS. The actual dependencies behind each flag
-# will be added in future tasks. Defining them now lets us write
-# #[cfg(feature = "...")] gates in our code structure.
 #
-# Consumers will eventually write:
+# Consumers enable features based on which pipeline stages they need:
 #   colossus-rag = { path = "../colossus-rs/colossus-rag", features = ["full"] }
 
 [features]
 default = []
-neo4j = []        # T-R.3: GraphExpander backed by Neo4j
-fastembed = []     # T-R.2: VectorRetriever with rig-fastembed embeddings
-axum = []          # Future: Axum handler integration (extractors, routes)
-full = ["neo4j", "fastembed", "axum"]
+qdrant = ["dep:qdrant-client"]     # T-R.2.1: Qdrant vector search via gRPC
+fastembed = ["dep:rig-fastembed"]   # T-R.2.1: Local embeddings via rig-fastembed
+neo4j = []                          # T-R.3: GraphExpander backed by Neo4j (placeholder)
+axum = []                           # Future: Axum handler integration (placeholder)
+full = ["neo4j", "fastembed", "qdrant", "axum"]
