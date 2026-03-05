@@ -92,9 +92,10 @@ mod expander;
 #[cfg(feature = "neo4j")]
 mod expander_queries;
 
-// The assembler and synthesizer modules use only base dependencies (no feature flags).
+// The router, assembler, and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
 mod assembler;
+mod router;
 mod synthesizer;
 
 // ## Rust Learning: `compile_error!` for helpful diagnostics
@@ -144,4 +145,5 @@ pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 pub use expander::Neo4jExpander;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
+pub use router::RuleBasedRouter;
 pub use synthesizer::RigSynthesizer;
