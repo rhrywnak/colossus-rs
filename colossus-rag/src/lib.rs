@@ -83,8 +83,9 @@ mod types;
 #[cfg(all(feature = "qdrant", feature = "fastembed"))]
 mod retriever;
 
-// The synthesizer module uses rig-core's Anthropic provider, which is a base
-// dependency (not feature-gated). No cfg gate needed — it's always available.
+// The assembler and synthesizer modules use only base dependencies (no feature flags).
+// They're always available regardless of which features are enabled.
+mod assembler;
 mod synthesizer;
 
 // ## Rust Learning: `compile_error!` for helpful diagnostics
@@ -130,4 +131,5 @@ pub use noop::{NoOpExpander, NoOpRouter};
 #[cfg(all(feature = "qdrant", feature = "fastembed"))]
 pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 
+pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
 pub use synthesizer::RigSynthesizer;
