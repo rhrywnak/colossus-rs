@@ -83,6 +83,10 @@ mod types;
 #[cfg(all(feature = "qdrant", feature = "fastembed"))]
 mod retriever;
 
+// The embedding reranker requires only fastembed (no Qdrant needed).
+#[cfg(feature = "fastembed")]
+mod reranker;
+
 // The Neo4j expander module requires the `neo4j` feature.
 // Split into two files to stay under the 300-line code limit:
 // - expander.rs: struct, trait impl, helpers, conversion
@@ -148,6 +152,9 @@ pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 
 #[cfg(feature = "neo4j")]
 pub use expander::Neo4jExpander;
+
+#[cfg(feature = "fastembed")]
+pub use reranker::EmbeddingReranker;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
 pub use pipeline::{RagPipeline, RagPipelineBuilder};

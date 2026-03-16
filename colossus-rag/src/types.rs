@@ -365,6 +365,17 @@ pub struct PipelineStats {
     /// Number of nodes expanded from the knowledge graph.
     pub graph_nodes_expanded: usize,
 
+    // --- Reranking stats (populated when reranker is enabled) ---
+
+    /// Time spent reranking expanded nodes via embedding similarity.
+    pub rerank_ms: u64,
+
+    /// Number of nodes remaining after reranking filter.
+    pub graph_nodes_after_rerank: usize,
+
+    /// Number of nodes filtered out by the reranker.
+    pub nodes_filtered_out: usize,
+
     /// Estimated token count of the assembled context.
     pub context_tokens_approx: usize,
 

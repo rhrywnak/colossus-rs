@@ -101,6 +101,11 @@ pub struct RagPipeline {
 
     /// Maximum number of vector search results per query.
     search_limit: usize,
+
+    /// Optional reranker — filters expanded chunks by semantic similarity.
+    /// When None, all expanded chunks pass through to the assembler.
+    #[cfg(feature = "fastembed")]
+    reranker: Option<crate::reranker::EmbeddingReranker>,
 }
 
 impl std::fmt::Debug for RagPipeline {
@@ -131,6 +136,8 @@ pub struct RagPipelineBuilder {
     synthesizer: Option<Box<dyn Synthesizer>>,
     max_context_tokens: usize,
     search_limit: usize,
+    #[cfg(feature = "fastembed")]
+    reranker: Option<crate::reranker::EmbeddingReranker>,
 }
 
 impl RagPipeline {
@@ -147,6 +154,8 @@ impl RagPipeline {
             synthesizer: None,
             max_context_tokens: 6000,
             search_limit: 10,
+            #[cfg(feature = "fastembed")]
+            reranker: None,
         }
     }
 }
@@ -213,6 +222,16 @@ impl RagPipelineBuilder {
         self
     }
 
+    /// Set the optional reranker for post-expansion semantic filtering.
+    ///
+    /// When set, graph-expanded chunks (score == 0.0) are filtered by
+    /// cosine similarity to the question. Qdrant hits always pass through.
+    #[cfg(feature = "fastembed")]
+    pub fn reranker(mut self, reranker: crate::reranker::EmbeddingReranker) -> Self {
+        self.reranker = Some(reranker);
+        self
+    }
+
     /// Build the pipeline, consuming the builder.
     ///
     /// Returns `RagError::ConfigError` if any required component is missing.
@@ -244,6 +263,8 @@ impl RagPipelineBuilder {
             synthesizer,
             max_context_tokens: self.max_context_tokens,
             search_limit: self.search_limit,
+            #[cfg(feature = "fastembed")]
+            reranker: self.reranker,
         })
     }
 }
@@ -329,6 +350,34 @@ impl RagPipeline {
 
         // Merge expanded chunks into the retriever results.
         merge_expansion(&mut chunks, expanded);
+
+        // --- Stage 3.5: Rerank (optional, filter by semantic similarity) ---
+        //
+        // When a reranker is configured, graph-expanded chunks (score == 0.0)
+        // are filtered by cosine similarity to the question embedding.
+        // Qdrant hits (score > 0.0) always pass through unconditionally.
+        #[cfg(feature = "fastembed")]
+        if let Some(ref reranker) = self.reranker {
+            let pre_rerank_count = chunks.len();
+            let rerank_start = Instant::now();
+
+            let (reranked_chunks, filtered_count) = reranker
+                .rerank(question, chunks)
+                .await?;
+
+            chunks = reranked_chunks;
+            stats.rerank_ms = rerank_start.elapsed().as_millis() as u64;
+            stats.graph_nodes_after_rerank = chunks.len();
+            stats.nodes_filtered_out = filtered_count;
+
+            tracing::info!(
+                pre_rerank = pre_rerank_count,
+                post_rerank = chunks.len(),
+                filtered_out = filtered_count,
+                rerank_ms = stats.rerank_ms,
+                "Pipeline: rerank complete"
+            );
+        }
 
         // --- Stage 4: Assemble context (format chunks into prompt) ---
         //
