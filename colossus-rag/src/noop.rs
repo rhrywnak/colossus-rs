@@ -21,8 +21,8 @@
 use async_trait::async_trait;
 
 use crate::error::RagError;
-use crate::traits::{GraphExpander, QueryRouter};
-use crate::types::{ContextChunk, RetrievalStrategy};
+use crate::traits::{GraphExpander, QueryDecomposer, QueryRouter};
+use crate::types::{ContextChunk, DecompositionResult, RetrievalStrategy, SubQuery};
 
 /// A router that always returns [`RetrievalStrategy::Broad`] with no filters.
 ///
@@ -62,5 +62,29 @@ impl GraphExpander for NoOpExpander {
     ) -> Result<Vec<ContextChunk>, RagError> {
         // No graph to expand — return empty results.
         Ok(Vec::new())
+    }
+}
+
+/// A decomposer that never decomposes — returns the original question as-is.
+///
+/// Use this when query decomposition is not needed or not configured.
+/// The pipeline will use the original question for a single vector search,
+/// exactly like the pre-WP-5 behavior.
+pub struct NoOpDecomposer;
+
+#[async_trait]
+impl QueryDecomposer for NoOpDecomposer {
+    async fn decompose(
+        &self,
+        question: &str,
+        _strategy: &RetrievalStrategy,
+    ) -> Result<DecompositionResult, RagError> {
+        Ok(DecompositionResult {
+            needs_decomposition: false,
+            sub_queries: vec![SubQuery::VectorSearch {
+                query: question.to_string(),
+            }],
+            original_question: question.to_string(),
+        })
     }
 }

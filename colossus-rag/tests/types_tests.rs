@@ -397,3 +397,70 @@ fn test_synthesis_result_roundtrip() {
         serde_json::from_str(&json).expect("should deserialize");
     assert_eq!(result, deserialized);
 }
+
+// ---------------------------------------------------------------------------
+// Test 12: NoOpDecomposer returns original question
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_noop_decomposer_returns_original() {
+    use colossus_rag::{NoOpDecomposer, QueryDecomposer};
+
+    let decomposer = NoOpDecomposer;
+    let question = "What did Phillips say?";
+    let strategy = RetrievalStrategy::Broad { node_types: None };
+
+    let result = decomposer
+        .decompose(question, &strategy)
+        .await
+        .expect("NoOpDecomposer should never fail");
+
+    assert!(!result.needs_decomposition);
+    assert_eq!(result.sub_queries.len(), 1);
+    assert_eq!(result.original_question, question);
+
+    match &result.sub_queries[0] {
+        colossus_rag::SubQuery::VectorSearch { query } => {
+            assert_eq!(query, question);
+        }
+        other => panic!("Expected VectorSearch, got {other:?}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test 13: SubQuery serde round-trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_sub_query_serde_roundtrip() {
+    use colossus_rag::SubQuery;
+
+    let queries = vec![
+        SubQuery::VectorSearch {
+            query: "test query".to_string(),
+        },
+        SubQuery::GraphDocumentContent {
+            document_id: "doc-phillips-coa-response-300891".to_string(),
+            description: "Phillips CoA evidence".to_string(),
+        },
+        SubQuery::GraphPersonStatements {
+            person_id: "george-phillips".to_string(),
+            description: "Phillips statements".to_string(),
+        },
+        SubQuery::GraphContradictions {
+            person_name: "Phillips".to_string(),
+            description: "Phillips contradictions".to_string(),
+        },
+    ];
+
+    for sq in &queries {
+        let json = serde_json::to_string(sq).expect("should serialize");
+        let deserialized: SubQuery = serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(sq, &deserialized, "Round-trip failed for: {json}");
+    }
+
+    // Verify tagged format.
+    let vs = &queries[0];
+    let json = serde_json::to_value(vs).expect("should serialize");
+    assert_eq!(json["type"], "vector_search");
+}

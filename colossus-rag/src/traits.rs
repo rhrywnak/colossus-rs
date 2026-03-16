@@ -49,7 +49,8 @@ use async_trait::async_trait;
 
 use crate::error::RagError;
 use crate::types::{
-    AssembledContext, ContextChunk, RetrievalStrategy, ScopeFilter, SynthesisResult,
+    AssembledContext, ContextChunk, DecompositionResult, RetrievalStrategy, ScopeFilter,
+    SynthesisResult,
 };
 
 /// Analyzes a question and determines the best retrieval strategy.
@@ -64,6 +65,29 @@ use crate::types::{
 #[async_trait]
 pub trait QueryRouter: Send + Sync {
     async fn route(&self, question: &str) -> Result<RetrievalStrategy, RagError>;
+}
+
+/// Analyzes a question and optionally decomposes it into sub-queries.
+///
+/// Complex questions that reference specific documents or people benefit
+/// from being split into targeted sub-queries. Some sub-queries go to
+/// vector search, others go directly to graph traversal.
+///
+/// ## Implementations
+/// - `LlmDecomposer`: Uses a fast LLM call (Sonnet) to analyze and decompose
+/// - `NoOpDecomposer`: Always returns the original question unchanged
+///
+/// ## Parameters
+/// - `question`: The user's original question text
+/// - `strategy`: The retrieval strategy from the router (provides context
+///   about detected entities and documents)
+#[async_trait]
+pub trait QueryDecomposer: Send + Sync {
+    async fn decompose(
+        &self,
+        question: &str,
+        strategy: &RetrievalStrategy,
+    ) -> Result<DecompositionResult, RagError>;
 }
 
 /// Searches the vector store for chunks relevant to a query.

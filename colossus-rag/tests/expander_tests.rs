@@ -303,4 +303,39 @@ mod neo4j_tests {
             broad_result.len(),
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Test 7: GraphDirectRetriever — fetch document evidence
+    // -----------------------------------------------------------------------
+
+    /// Test that fetch_document_evidence returns Evidence nodes from a known document.
+    #[tokio::test]
+    #[ignore] // Requires Neo4j
+    async fn test_fetch_document_evidence() {
+        use colossus_rag::GraphDirectRetriever;
+
+        let graph = create_test_graph().await;
+        let retriever = GraphDirectRetriever::new(graph);
+
+        let chunks = retriever
+            .fetch_document_evidence("doc-phillips-coa-response-300891")
+            .await
+            .expect("Should succeed");
+
+        assert!(
+            !chunks.is_empty(),
+            "Should find evidence in Phillips CoA response"
+        );
+
+        // All results should be Evidence type with score 0.0.
+        for chunk in &chunks {
+            assert_eq!(chunk.node_type, "Evidence");
+            assert_eq!(chunk.score, 0.0);
+        }
+
+        println!(
+            "Found {} evidence nodes from Phillips CoA response",
+            chunks.len()
+        );
+    }
 }

@@ -140,6 +140,77 @@ pub enum ScopeFilterType {
 }
 
 // ===========================================================================
+// Query Decomposition — sub-queries for multi-path retrieval
+// ===========================================================================
+
+/// A sub-query produced by the QueryDecomposer.
+///
+/// Complex questions are decomposed into multiple sub-queries, each targeting
+/// a different retrieval path. Some go to vector search (Qdrant), others go
+/// directly to graph queries (Neo4j Cypher).
+///
+/// ## Rust Learning: Tagged enum serialization
+///
+/// `#[serde(tag = "type")]` uses the variant name (snake_case) as a "type"
+/// discriminator in JSON. So `SubQuery::VectorSearch { query: "..." }`
+/// serializes as `{ "type": "vector_search", "query": "..." }`.
+/// This makes the JSON self-describing and easy for an LLM to produce.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum SubQuery {
+    /// Standard vector search — embed query and search Qdrant.
+    /// This is what the pipeline does today for every question.
+    VectorSearch {
+        query: String,
+    },
+
+    /// Fetch all evidence contained in a specific document.
+    /// Executes: MATCH (e:Evidence)-[:CONTAINED_IN]->(d:Document {id: $doc_id}) RETURN e
+    GraphDocumentContent {
+        document_id: String,
+        #[serde(default)]
+        description: String,
+    },
+
+    /// Fetch all evidence stated by a specific person.
+    /// Executes: MATCH (e:Evidence)-[:STATED_BY]->(p {id: $person_id}) RETURN e
+    GraphPersonStatements {
+        person_id: String,
+        #[serde(default)]
+        description: String,
+    },
+
+    /// Fetch evidence involved in contradictions for a person.
+    /// Executes: MATCH (e)-[:CONTRADICTS]-(other) WHERE ... RETURN e, other
+    GraphContradictions {
+        person_name: String,
+        #[serde(default)]
+        description: String,
+    },
+}
+
+/// Result of query decomposition.
+///
+/// The decomposer analyzes a question and decides whether to split it into
+/// multiple sub-queries or pass it through unchanged.
+///
+/// When `needs_decomposition` is false, `sub_queries` contains a single
+/// `VectorSearch` with the original question — equivalent to no decomposition.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DecompositionResult {
+    /// Whether the question was decomposed into multiple sub-queries.
+    pub needs_decomposition: bool,
+
+    /// The sub-queries to execute. Always at least one (the original question
+    /// as a VectorSearch if no decomposition was needed).
+    pub sub_queries: Vec<SubQuery>,
+
+    /// The original question text, preserved for context.
+    pub original_question: String,
+}
+
+// ===========================================================================
 // Context — chunks retrieved from vector search and graph expansion
 // ===========================================================================
 

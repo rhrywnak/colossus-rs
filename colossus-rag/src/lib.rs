@@ -99,6 +99,8 @@ mod expander;
 mod expander_queries;
 #[cfg(feature = "neo4j")]
 mod expander_queries_minor;
+#[cfg(feature = "neo4j")]
+mod graph_retriever;
 
 // The router, assembler, and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
@@ -132,18 +134,20 @@ pub use error::RagError;
 // --- Public API re-exports: Core types ---
 
 pub use types::{
-    AssembledContext, Citation, ContextChunk, PipelineStats, RagResult, RelatedNode,
-    RelationDirection, RetrievalStrategy, ScopeFilter, ScopeFilterType, SourceReference,
-    SynthesisResult,
+    AssembledContext, Citation, ContextChunk, DecompositionResult, PipelineStats, RagResult,
+    RelatedNode, RelationDirection, RetrievalStrategy, ScopeFilter, ScopeFilterType,
+    SourceReference, SubQuery, SynthesisResult,
 };
 
 // --- Public API re-exports: Traits ---
 
-pub use traits::{ContextAssembler, GraphExpander, QueryRouter, Synthesizer, VectorRetriever};
+pub use traits::{
+    ContextAssembler, GraphExpander, QueryDecomposer, QueryRouter, Synthesizer, VectorRetriever,
+};
 
 // --- Public API re-exports: No-op implementations ---
 
-pub use noop::{NoOpExpander, NoOpRouter};
+pub use noop::{NoOpDecomposer, NoOpExpander, NoOpRouter};
 
 // --- Public API re-exports: Feature-gated implementations ---
 
@@ -152,6 +156,9 @@ pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 
 #[cfg(feature = "neo4j")]
 pub use expander::Neo4jExpander;
+
+#[cfg(feature = "neo4j")]
+pub use graph_retriever::GraphDirectRetriever;
 
 #[cfg(feature = "fastembed")]
 pub use reranker::EmbeddingReranker;
