@@ -255,7 +255,11 @@ async fn test_noop_expander_returns_empty() {
     let seed_ids = vec!["node-1".to_string(), "node-2".to_string()];
 
     let result = expander
-        .expand(&seed_ids, 2)
+        .expand(
+            &seed_ids,
+            2,
+            &RetrievalStrategy::Broad { node_types: None },
+        )
         .await
         .expect("NoOpExpander should never fail");
 

@@ -58,6 +58,7 @@ impl GraphExpander for NoOpExpander {
         &self,
         _seed_ids: &[String],
         _max_depth: u32,
+        _strategy: &RetrievalStrategy,
     ) -> Result<Vec<ContextChunk>, RagError> {
         // No graph to expand — return empty results.
         Ok(Vec::new())

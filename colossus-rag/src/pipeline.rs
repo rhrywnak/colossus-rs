@@ -317,7 +317,7 @@ impl RagPipeline {
         let seed_ids: Vec<String> = chunks.iter().map(|c| c.node_id.clone()).collect();
 
         let expand_start = Instant::now();
-        let expanded = self.expander.expand(&seed_ids, 1).await?;
+        let expanded = self.expander.expand(&seed_ids, 1, &strategy).await?;
         stats.expand_ms = expand_start.elapsed().as_millis() as u64;
         stats.graph_nodes_expanded = expanded.len();
 

@@ -105,12 +105,16 @@ pub trait VectorRetriever: Send + Sync {
 /// ## Parameters
 /// - `seed_ids`: Node IDs from vector search to start expanding from
 /// - `max_depth`: How many relationship hops to follow (1 = direct neighbors)
+/// - `strategy`: The retrieval strategy from the router, used to determine
+///   which relationship types to follow during expansion. For example,
+///   a person-focused strategy only follows STATED_BY, ABOUT, etc.
 #[async_trait]
 pub trait GraphExpander: Send + Sync {
     async fn expand(
         &self,
         seed_ids: &[String],
         max_depth: u32,
+        strategy: &RetrievalStrategy,
     ) -> Result<Vec<ContextChunk>, RagError>;
 }
 

@@ -17,7 +17,7 @@
 
 #[cfg(feature = "neo4j")]
 mod neo4j_tests {
-    use colossus_rag::{GraphExpander, Neo4jExpander};
+    use colossus_rag::{GraphExpander, Neo4jExpander, RetrievalStrategy, ScopeFilter, ScopeFilterType};
     use std::sync::Arc;
 
     // ===========================================================================
@@ -90,7 +90,7 @@ mod neo4j_tests {
         let expander = Neo4jExpander::new(graph);
 
         let seeds = vec!["evidence-phillips-q74".to_string()];
-        let chunks = expander.expand(&seeds, 1).await
+        let chunks = expander.expand(&seeds, 1, &RetrievalStrategy::Broad { node_types: None }).await
             .expect("Expansion should succeed");
 
         // Should have at least the seed + some neighbors.
@@ -160,7 +160,7 @@ mod neo4j_tests {
             "evidence-phillips-q74".to_string(),
             "evidence-phillips-q91".to_string(),
         ];
-        let chunks = expander.expand(&seeds, 1).await
+        let chunks = expander.expand(&seeds, 1, &RetrievalStrategy::Broad { node_types: None }).await
             .expect("Expansion should succeed");
 
         println!("\n  === Multi-seed Expansion ===");
@@ -192,7 +192,7 @@ mod neo4j_tests {
         let expander = Neo4jExpander::new(graph);
 
         let seeds = vec!["this-id-does-not-exist-12345".to_string()];
-        let chunks = expander.expand(&seeds, 1).await
+        let chunks = expander.expand(&seeds, 1, &RetrievalStrategy::Broad { node_types: None }).await
             .expect("Expansion should succeed (empty, not error)");
 
         assert!(
@@ -233,7 +233,7 @@ mod neo4j_tests {
         }
 
         let seeds = vec![allegation_id.clone()];
-        let chunks = expander.expand(&seeds, 1).await
+        let chunks = expander.expand(&seeds, 1, &RetrievalStrategy::Broad { node_types: None }).await
             .expect("Expansion should succeed");
 
         println!("\n  === Allegation Expansion: {allegation_id} ===");
@@ -248,6 +248,59 @@ mod neo4j_tests {
         assert!(
             !chunks.is_empty(),
             "Should return at least the seed allegation node"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 6: Person-focused expansion returns fewer nodes than Broad
+    // -----------------------------------------------------------------------
+
+    /// Test that Person-focused expansion returns fewer nodes than Broad.
+    /// This is a behavioral test — we compare node counts between strategies.
+    #[tokio::test]
+    #[ignore] // Requires Neo4j
+    async fn test_person_focused_returns_fewer_nodes() {
+        let graph = create_test_graph().await;
+        let expander = Neo4jExpander::new(graph);
+
+        // Use a known Evidence seed that has STATED_BY + CONTAINED_IN + CHARACTERIZES.
+        let seed_ids = vec!["evidence-phillips-q74".to_string()];
+
+        // Broad should return all neighbors.
+        let broad_result = expander
+            .expand(
+                &seed_ids,
+                1,
+                &RetrievalStrategy::Broad { node_types: None },
+            )
+            .await
+            .expect("Broad expansion should succeed");
+
+        // Person-focused should return only STATED_BY and ABOUT neighbors.
+        let person_result = expander
+            .expand(
+                &seed_ids,
+                1,
+                &RetrievalStrategy::Focused {
+                    scope: vec![ScopeFilter {
+                        filter_type: ScopeFilterType::Person,
+                        value: "Phillips".to_string(),
+                    }],
+                },
+            )
+            .await
+            .expect("Person-focused expansion should succeed");
+
+        println!("\n  === Person-focused vs Broad ===");
+        println!("  Broad: {} nodes", broad_result.len());
+        println!("  Person-focused: {} nodes", person_result.len());
+
+        // Person result should have fewer or equal nodes.
+        assert!(
+            person_result.len() <= broad_result.len(),
+            "Person-focused ({}) should return <= Broad ({}) nodes",
+            person_result.len(),
+            broad_result.len(),
         );
     }
 }

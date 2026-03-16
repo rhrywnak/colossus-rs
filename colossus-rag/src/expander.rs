@@ -42,9 +42,11 @@ use async_trait::async_trait;
 use neo4rs::{query, Graph};
 
 use crate::error::RagError;
+use crate::expansion_category::ExpansionCategory;
 use crate::expander_queries;
+use crate::expander_queries_minor;
 use crate::traits::GraphExpander;
-use crate::types::{ContextChunk, RelatedNode, RelationDirection, SourceReference};
+use crate::types::{ContextChunk, RelatedNode, RelationDirection, RetrievalStrategy, SourceReference};
 
 // ---------------------------------------------------------------------------
 // Internal types — mirror the original graph_expander.rs types
@@ -143,10 +145,16 @@ impl GraphExpander for Neo4jExpander {
         &self,
         seed_ids: &[String],
         _max_depth: u32,
+        strategy: &RetrievalStrategy,
     ) -> Result<Vec<ContextChunk>, RagError> {
         if seed_ids.is_empty() {
             return Ok(Vec::new());
         }
+
+        // Derive expansion category from the router's strategy.
+        // This determines which relationship types the expander follows.
+        let category = ExpansionCategory::from_strategy(strategy);
+        let allowed_rels = category.allowed_relationships();
 
         // Step 1: Resolve seed IDs to (id, node_type) pairs.
         // The trait receives bare IDs but the expansion functions need the
@@ -155,8 +163,10 @@ impl GraphExpander for Neo4jExpander {
 
         tracing::info!(
             seed_count = typed_seeds.len(),
-            "Graph expansion: starting with {} typed seeds",
-            typed_seeds.len()
+            category = ?category,
+            "Graph expansion: starting with {} typed seeds, category {:?}",
+            typed_seeds.len(),
+            category
         );
 
         let mut all_nodes: Vec<ExpandedNode> = Vec::new();
@@ -173,25 +183,25 @@ impl GraphExpander for Neo4jExpander {
         for (node_id, node_type) in &typed_seeds {
             let result = match node_type.as_str() {
                 "Evidence" => {
-                    expander_queries::expand_evidence(&self.graph, node_id, &mut seen).await
+                    expander_queries::expand_evidence(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "ComplaintAllegation" => {
-                    expander_queries::expand_allegation(&self.graph, node_id, &mut seen).await
+                    expander_queries::expand_allegation(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "MotionClaim" => {
-                    expander_queries::expand_motion_claim(&self.graph, node_id, &mut seen).await
+                    expander_queries::expand_motion_claim(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "Harm" => {
-                    expander_queries::expand_harm(&self.graph, node_id, &mut seen).await
+                    expander_queries_minor::expand_harm(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "Document" => {
-                    expander_queries::expand_document(&self.graph, node_id, &mut seen).await
+                    expander_queries_minor::expand_document(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "Person" => {
-                    expander_queries::expand_person(&self.graph, node_id, &mut seen).await
+                    expander_queries_minor::expand_person(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 "Organization" => {
-                    expander_queries::expand_organization(&self.graph, node_id, &mut seen).await
+                    expander_queries_minor::expand_organization(&self.graph, node_id, &mut seen, &allowed_rels).await
                 }
                 _ => {
                     tracing::warn!("Unknown node type for expansion: {node_type}");

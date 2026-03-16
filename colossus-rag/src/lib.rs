@@ -88,9 +88,13 @@ mod retriever;
 // - expander.rs: struct, trait impl, helpers, conversion
 // - expander_queries.rs: 7 per-type Cypher expansion functions
 #[cfg(feature = "neo4j")]
+mod expansion_category;
+#[cfg(feature = "neo4j")]
 mod expander;
 #[cfg(feature = "neo4j")]
 mod expander_queries;
+#[cfg(feature = "neo4j")]
+mod expander_queries_minor;
 
 // The router, assembler, and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
