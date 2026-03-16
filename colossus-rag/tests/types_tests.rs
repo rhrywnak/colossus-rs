@@ -148,6 +148,7 @@ fn test_pipeline_stats_default_all_zeros() {
     assert_eq!(stats.total_ms, 0);
     assert_eq!(stats.qdrant_hits, 0);
     assert_eq!(stats.graph_nodes_expanded, 0);
+    assert_eq!(stats.decompose_ms, 0);
     assert_eq!(stats.rerank_ms, 0);
     assert_eq!(stats.graph_nodes_after_rerank, 0);
     assert_eq!(stats.nodes_filtered_out, 0);

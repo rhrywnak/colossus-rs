@@ -105,7 +105,9 @@ mod graph_retriever;
 // The router, assembler, and synthesizer modules use only base dependencies (no feature flags).
 // They're always available regardless of which features are enabled.
 mod assembler;
+mod decomposer;
 mod pipeline;
+mod pipeline_helpers;
 mod router;
 mod synthesizer;
 
@@ -164,6 +166,7 @@ pub use graph_retriever::GraphDirectRetriever;
 pub use reranker::EmbeddingReranker;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};
+pub use decomposer::LlmDecomposer;
 pub use pipeline::{RagPipeline, RagPipelineBuilder};
 pub use router::RuleBasedRouter;
 pub use synthesizer::RigSynthesizer;

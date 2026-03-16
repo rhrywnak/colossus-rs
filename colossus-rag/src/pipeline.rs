@@ -58,15 +58,17 @@
 //! simultaneously if the expander used separate seed IDs, but our design
 //! feeds retriever results INTO the expander.
 
-use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::error::RagError;
 use crate::noop::NoOpExpander;
-use crate::traits::{ContextAssembler, GraphExpander, QueryRouter, Synthesizer, VectorRetriever};
-use crate::types::{
-    ContextChunk, PipelineStats, RagResult, RetrievalStrategy, ScopeFilter,
+use crate::pipeline_helpers::{
+    execute_sub_queries, format_strategy_name, merge_expansion, strategy_to_search_params,
 };
+use crate::traits::{
+    ContextAssembler, GraphExpander, QueryDecomposer, QueryRouter, Synthesizer, VectorRetriever,
+};
+use crate::types::{PipelineStats, RagResult, SubQuery};
 
 // ---------------------------------------------------------------------------
 // RagPipeline — the assembled pipeline ready to answer questions
@@ -102,6 +104,14 @@ pub struct RagPipeline {
     /// Maximum number of vector search results per query.
     search_limit: usize,
 
+    /// Optional query decomposer — breaks complex questions into sub-queries.
+    decomposer: Option<Box<dyn QueryDecomposer>>,
+
+    /// Optional graph retriever — executes direct Cypher sub-queries.
+    /// Required when decomposer is configured (graph sub-queries need this).
+    #[cfg(feature = "neo4j")]
+    graph_retriever: Option<crate::graph_retriever::GraphDirectRetriever>,
+
     /// Optional reranker — filters expanded chunks by semantic similarity.
     /// When None, all expanded chunks pass through to the assembler.
     #[cfg(feature = "fastembed")]
@@ -136,6 +146,9 @@ pub struct RagPipelineBuilder {
     synthesizer: Option<Box<dyn Synthesizer>>,
     max_context_tokens: usize,
     search_limit: usize,
+    decomposer: Option<Box<dyn QueryDecomposer>>,
+    #[cfg(feature = "neo4j")]
+    graph_retriever: Option<crate::graph_retriever::GraphDirectRetriever>,
     #[cfg(feature = "fastembed")]
     reranker: Option<crate::reranker::EmbeddingReranker>,
 }
@@ -154,6 +167,9 @@ impl RagPipeline {
             synthesizer: None,
             max_context_tokens: 6000,
             search_limit: 10,
+            decomposer: None,
+            #[cfg(feature = "neo4j")]
+            graph_retriever: None,
             #[cfg(feature = "fastembed")]
             reranker: None,
         }
@@ -222,6 +238,22 @@ impl RagPipelineBuilder {
         self
     }
 
+    /// Set the optional query decomposer for multi-path retrieval.
+    pub fn decomposer(mut self, decomposer: Box<dyn QueryDecomposer>) -> Self {
+        self.decomposer = Some(decomposer);
+        self
+    }
+
+    /// Set the optional graph retriever for direct Cypher sub-queries.
+    #[cfg(feature = "neo4j")]
+    pub fn graph_retriever(
+        mut self,
+        graph_retriever: crate::graph_retriever::GraphDirectRetriever,
+    ) -> Self {
+        self.graph_retriever = Some(graph_retriever);
+        self
+    }
+
     /// Set the optional reranker for post-expansion semantic filtering.
     ///
     /// When set, graph-expanded chunks (score == 0.0) are filtered by
@@ -263,6 +295,9 @@ impl RagPipelineBuilder {
             synthesizer,
             max_context_tokens: self.max_context_tokens,
             search_limit: self.search_limit,
+            decomposer: self.decomposer,
+            #[cfg(feature = "neo4j")]
+            graph_retriever: self.graph_retriever,
             #[cfg(feature = "fastembed")]
             reranker: self.reranker,
         })
@@ -315,20 +350,45 @@ impl RagPipeline {
             "Pipeline: routed question"
         );
 
-        // --- Stage 2: Vector search (embed + search Qdrant) ---
-        //
-        // The retriever handles both embedding and searching internally.
-        // We measure them together as "search_ms" because the retriever
-        // doesn't expose separate timing for embed vs search.
+        // --- Stage 1.5: Decompose (optional, break into sub-queries) ---
+        let decompose_start = Instant::now();
+        let sub_queries = if let Some(ref decomposer) = self.decomposer {
+            let decomposition = decomposer.decompose(question, &strategy).await?;
+            stats.decompose_ms = decompose_start.elapsed().as_millis() as u64;
+
+            tracing::info!(
+                needs_decomposition = decomposition.needs_decomposition,
+                sub_queries = decomposition.sub_queries.len(),
+                decompose_ms = stats.decompose_ms,
+                "Pipeline: decomposition complete"
+            );
+
+            decomposition.sub_queries
+        } else {
+            // No decomposer configured — single vector search (original behavior).
+            vec![SubQuery::VectorSearch {
+                query: question.to_string(),
+            }]
+        };
+
+        // --- Stage 2: Execute sub-queries (vector search + graph queries) ---
         let search_start = Instant::now();
-        let mut chunks = self.retriever.search(question, limit, &filters).await?;
+        let mut chunks = execute_sub_queries(
+            &sub_queries,
+            &*self.retriever,
+            limit,
+            &filters,
+            #[cfg(feature = "neo4j")]
+            &self.graph_retriever,
+        )
+        .await?;
         stats.search_ms = search_start.elapsed().as_millis() as u64;
         stats.qdrant_hits = chunks.len();
 
         tracing::info!(
             hits = chunks.len(),
             search_ms = stats.search_ms,
-            "Pipeline: vector search complete"
+            "Pipeline: sub-query execution complete"
         );
 
         // --- Stage 3: Graph expansion (follow Neo4j relationships) ---
@@ -427,103 +487,3 @@ impl RagPipeline {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helper: convert RetrievalStrategy into search parameters
-// ---------------------------------------------------------------------------
-
-/// Convert a [`RetrievalStrategy`] into Qdrant search parameters.
-///
-/// Returns `(filters, limit)` where:
-/// - `filters`: Scope filters to pass to the retriever (may be empty for Broad)
-/// - `limit`: Maximum number of results to request from Qdrant
-///
-/// ## Strategy mapping
-///
-/// | Strategy | Filters | Limit |
-/// |----------|---------|-------|
-/// | Focused  | scope filters from router | configured limit |
-/// | Broad    | none | configured limit |
-/// | Hybrid   | all scope filters | configured limit |
-/// | Direct   | none (falls back to Broad) | configured limit |
-///
-/// The `Direct` strategy is a placeholder for future graph-only queries.
-/// For v1, we fall back to Broad search — this is safe because the
-/// assembler and synthesizer will still produce a useful answer.
-fn strategy_to_search_params(
-    strategy: &RetrievalStrategy,
-    default_limit: usize,
-) -> (Vec<ScopeFilter>, usize) {
-    match strategy {
-        RetrievalStrategy::Focused { scope } => {
-            (scope.clone(), default_limit)
-        }
-        RetrievalStrategy::Broad { .. } => {
-            (Vec::new(), default_limit)
-        }
-        RetrievalStrategy::Hybrid { scopes, .. } => {
-            (scopes.clone(), default_limit)
-        }
-        // Direct strategy: fall back to Broad for v1.
-        RetrievalStrategy::Direct { .. } => {
-            tracing::warn!("Direct strategy not yet implemented — falling back to Broad");
-            (Vec::new(), default_limit)
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helper: merge expanded chunks into retriever results
-// ---------------------------------------------------------------------------
-
-/// Merge graph-expanded chunks into the retriever's vector search results.
-///
-/// Expanded chunks are appended after retriever chunks, with deduplication
-/// by `node_id`. If an expanded chunk has the same `node_id` as a retriever
-/// chunk, it's skipped (the retriever version has a real similarity score,
-/// so it's more useful for ranking).
-///
-/// The assembler will sort all chunks by score anyway (retriever chunks
-/// have score > 0, expanded chunks have score = 0.0), so the order of
-/// appending doesn't matter for the final prompt.
-fn merge_expansion(chunks: &mut Vec<ContextChunk>, expanded: Vec<ContextChunk>) {
-    // Build a set of existing node IDs for O(1) dedup lookups.
-    //
-    // ## Rust Learning: Owned `String` to avoid borrow conflict
-    //
-    // We clone into `HashSet<String>` instead of borrowing `&str` because
-    // we need to mutate `chunks` (push new items) while checking the set.
-    // If we borrowed `&str` from `chunks`, the borrow checker would prevent
-    // us from pushing — you can't have an immutable borrow (the &str refs)
-    // and a mutable borrow (push) active at the same time.
-    let existing_ids: HashSet<String> = chunks.iter().map(|c| c.node_id.clone()).collect();
-
-    for chunk in expanded {
-        if !existing_ids.contains(&chunk.node_id) {
-            chunks.push(chunk);
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helper: format strategy name for stats
-// ---------------------------------------------------------------------------
-
-/// Produce a human-readable name for the strategy (used in PipelineStats).
-fn format_strategy_name(strategy: &RetrievalStrategy) -> String {
-    match strategy {
-        RetrievalStrategy::Focused { scope } => {
-            let types: Vec<&str> = scope.iter().map(|s| match s.filter_type {
-                crate::types::ScopeFilterType::Document => "document",
-                crate::types::ScopeFilterType::Person => "person",
-                crate::types::ScopeFilterType::NodeType => "node_type",
-                crate::types::ScopeFilterType::Collection => "collection",
-            }).collect();
-            format!("Focused({})", types.join(", "))
-        }
-        RetrievalStrategy::Broad { .. } => "Broad".into(),
-        RetrievalStrategy::Hybrid { scopes, .. } => {
-            format!("Hybrid({} scopes)", scopes.len())
-        }
-        RetrievalStrategy::Direct { .. } => "Direct".into(),
-    }
-}

@@ -436,6 +436,11 @@ pub struct PipelineStats {
     /// Number of nodes expanded from the knowledge graph.
     pub graph_nodes_expanded: usize,
 
+    // --- Decomposition stats (populated when decomposer is enabled) ---
+
+    /// Time spent decomposing the query into sub-queries.
+    pub decompose_ms: u64,
+
     // --- Reranking stats (populated when reranker is enabled) ---
 
     /// Time spent reranking expanded nodes via embedding similarity.
