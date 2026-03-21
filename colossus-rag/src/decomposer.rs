@@ -59,21 +59,37 @@ pub struct LlmDecomposer {
 
     /// Known person names for the prompt context.
     person_list: String,
+
+    /// Optional externalized prompt template loaded from disk.
+    ///
+    /// If `Some`, this template is used instead of the hardcoded default.
+    /// The template must contain these exact placeholders (literal text,
+    /// NOT Rust format syntax — we use `.replace()` at runtime):
+    /// - `{docs}` — replaced with formatted document alias list
+    /// - `{persons}` — replaced with formatted person name list
+    /// - `{question}` — replaced with the user's question
+    /// - `{strategy}` — replaced with the retrieval strategy as a string
+    prompt_template: Option<String>,
 }
 
 impl LlmDecomposer {
     /// Create a decomposer with an Anthropic model and knowledge graph metadata.
     ///
     /// ## Parameters
+    ///
     /// - `api_key`: Anthropic API key (same as synthesizer)
     /// - `model_id`: Model to use (e.g., "claude-sonnet-4-6" — fast and cheap)
     /// - `document_aliases`: Map of alias -> document_id (from router config)
     /// - `person_names`: List of known person names (from router config)
+    /// - `prompt_template`: Optional externalized prompt template loaded from disk.
+    ///   If `None`, the hardcoded default is used. If `Some`, must contain
+    ///   `{docs}`, `{persons}`, `{question}`, and `{strategy}` placeholders.
     pub fn new(
         api_key: &str,
         model_id: &str,
         document_aliases: &std::collections::HashMap<String, String>,
         person_names: &[String],
+        prompt_template: Option<String>,
     ) -> Result<Self, RagError> {
         let client = rig::providers::anthropic::Client::new(api_key).map_err(|e| {
             RagError::ConfigError(format!(
@@ -101,13 +117,33 @@ impl LlmDecomposer {
             model_name: model_id.to_string(),
             document_list,
             person_list,
+            prompt_template,
         })
     }
 
     /// Build the decomposition prompt.
+    ///
+    /// ## Rust Learning: format!() vs .replace() for templates
+    ///
+    /// `format!()` uses compile-time syntax like `{strategy:?}` — this only
+    /// works on string literals the compiler can see. For runtime-loaded
+    /// templates (read from a file), we use `.replace("{strategy}", &val)`
+    /// which does simple string substitution at runtime.
     fn build_prompt(&self, question: &str, strategy: &RetrievalStrategy) -> String {
-        format!(
-            r#"You are a legal research query planner for the Awad v. CFS/Phillips case.
+        // Convert strategy to a display string once — used by both paths.
+        let strategy_str = format!("{strategy:?}");
+
+        if let Some(template) = &self.prompt_template {
+            // Externalized template: use .replace() for runtime substitution.
+            template
+                .replace("{docs}", &self.document_list)
+                .replace("{persons}", &self.person_list)
+                .replace("{question}", question)
+                .replace("{strategy}", &strategy_str)
+        } else {
+            // Hardcoded default (original prompt).
+            format!(
+                r#"You are a legal research query planner for the Awad v. CFS/Phillips case.
 
 Given a question, decide whether it needs to be decomposed into sub-queries for better document retrieval.
 
@@ -137,12 +173,13 @@ Respond with ONLY valid JSON matching this structure:
 }}
 
 QUESTION: {question}
-STRATEGY: {strategy:?}"#,
-            docs = self.document_list,
-            persons = self.person_list,
-            question = question,
-            strategy = strategy,
-        )
+STRATEGY: {strategy}"#,
+                docs = self.document_list,
+                persons = self.person_list,
+                question = question,
+                strategy = strategy_str,
+            )
+        }
     }
 }
 
