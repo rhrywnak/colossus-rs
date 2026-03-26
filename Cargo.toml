@@ -1,5 +1,5 @@
 [workspace]
-members = ["colossus-auth", "colossus-rag"]
+members = ["colossus-auth", "colossus-rag", "colossus-pdf"]
 resolver = "2"
 
 [workspace.dependencies]
