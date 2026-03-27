@@ -6,7 +6,7 @@
 
 use colossus_rag::{
     AssembledContext, Citation, ContextChunk, LegalAssembler, NoOpRouter,
-    RagError, RagPipeline, RetrievalStrategy, RuleBasedRouter,
+    RagError, RagPipeline, RetrievalStrategy,
     ScopeFilter, SourceReference, SynthesisResult,
 };
 
