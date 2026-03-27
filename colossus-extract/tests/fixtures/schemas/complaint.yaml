@@ -1,0 +1,88 @@
+document_type: complaint
+description: "Legal complaint filing — parties, factual allegations, claims, and exhibits"
+
+entity_types:
+  - name: Party
+    description: "A person or organization involved in the case (plaintiff, defendant, etc.)"
+    properties:
+      - name: role
+        type: string
+        required: true
+        description: "Role in the case (plaintiff, defendant, third_party)"
+      - name: full_name
+        type: string
+        required: true
+        description: "Full legal name as it appears in the document"
+      - name: entity_kind
+        type: string
+        description: "Person or organization"
+
+  - name: FactualAllegation
+    description: "A specific factual claim made in the complaint"
+    properties:
+      - name: paragraph_number
+        type: string
+        description: "Paragraph number in the complaint"
+      - name: summary
+        type: string
+        required: true
+        description: "Brief summary of the allegation"
+
+  - name: Claim
+    description: "A legal cause of action asserted in the complaint"
+    properties:
+      - name: claim_number
+        type: integer
+        description: "Count number in the complaint"
+      - name: legal_basis
+        type: string
+        required: true
+        description: "The legal theory or statute"
+
+  - name: Exhibit
+    description: "A document or evidence referenced in the complaint"
+    properties:
+      - name: exhibit_id
+        type: string
+        required: true
+        description: "Exhibit label (e.g. Exhibit A)"
+      - name: description
+        type: string
+        description: "Brief description of the exhibit"
+
+relationship_types:
+  - name: FILED_BY
+    description: "Links the complaint to the filing party"
+  - name: FILED_AGAINST
+    description: "Links the complaint to the defendant"
+  - name: ALLEGES
+    description: "Links a party to a factual allegation they make"
+  - name: SUPPORTS
+    description: "Links a factual allegation to a claim it supports"
+  - name: REFERENCES
+    description: "Links an entity to an exhibit it references"
+  - name: AGAINST
+    description: "Links a claim to the party it is brought against"
+
+valid_patterns:
+  - from: Party
+    relationship: ALLEGES
+    to: FactualAllegation
+  - from: FactualAllegation
+    relationship: SUPPORTS
+    to: Claim
+  - from: Claim
+    relationship: AGAINST
+    to: Party
+  - from: FactualAllegation
+    relationship: REFERENCES
+    to: Exhibit
+  - from: Claim
+    relationship: REFERENCES
+    to: Exhibit
+
+extraction_rules:
+  - "Every verbatim_quote must be an exact substring of the document text"
+  - "Identify all parties by their full legal name and role"
+  - "Link factual allegations to the claims they support"
+  - "Include paragraph numbers when available"
