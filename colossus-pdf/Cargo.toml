@@ -1,6 +1,6 @@
 [package]
 name = "colossus-pdf"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "PDF text extraction and page-grounding for Colossus applications"
 
