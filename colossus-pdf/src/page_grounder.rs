@@ -41,6 +41,8 @@ pub enum MatchType {
 /// split on whitespace, rejoin with single spaces, then lowercase.
 fn normalize_text(text: &str) -> String {
     text.replace('¶', " ")
+        .replace(['\u{201C}', '\u{201D}'], "\"")  // curly double quotes → straight
+        .replace(['\u{2018}', '\u{2019}'], "'")    // curly single quotes → straight
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -261,6 +263,18 @@ mod tests {
         assert_eq!(
             normalize_text("is a ¶¶Michigan metropolitan"),
             "is a michigan metropolitan"
+        );
+    }
+
+    #[test]
+    fn test_normalize_smart_quotes() {
+        assert_eq!(
+            normalize_text("referred to as \u{201C}DETROIT\u{201D}"),
+            "referred to as \"detroit\""
+        );
+        assert_eq!(
+            normalize_text("Awad\u{2019}s father"),
+            "awad's father"
         );
     }
 
