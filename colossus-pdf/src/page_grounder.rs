@@ -40,7 +40,8 @@ pub enum MatchType {
 /// This matches the normalization used by the frontend's `pdfHighlight.ts`:
 /// split on whitespace, rejoin with single spaces, then lowercase.
 fn normalize_text(text: &str) -> String {
-    text.split_whitespace()
+    text.replace('¶', " ")
+        .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
@@ -253,6 +254,14 @@ mod tests {
 
         assert_eq!(result.page_number, Some(2));
         assert!(matches!(result.match_type, MatchType::Normalized));
+    }
+
+    #[test]
+    fn test_normalize_pilcrow() {
+        assert_eq!(
+            normalize_text("is a ¶¶Michigan metropolitan"),
+            "is a michigan metropolitan"
+        );
     }
 
     #[test]
