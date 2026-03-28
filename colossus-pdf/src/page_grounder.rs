@@ -35,18 +35,81 @@ pub enum MatchType {
     NotFound,
 }
 
-/// Collapse whitespace and lowercase for fuzzy matching.
+/// Comprehensive text normalization for PDF-to-LLM matching.
 ///
-/// This matches the normalization used by the frontend's `pdfHighlight.ts`:
-/// split on whitespace, rejoin with single spaces, then lowercase.
+/// PDF text extraction produces artifacts that LLMs normalize in their
+/// output. This function applies the same normalizations so substring
+/// matching works. Order matters — hyphenated breaks must be rejoined
+/// before whitespace collapsing.
 fn normalize_text(text: &str) -> String {
-    text.replace('¶', " ")
-        .replace(['\u{201C}', '\u{201D}'], "\"")  // curly double quotes → straight
-        .replace(['\u{2018}', '\u{2019}'], "'")    // curly single quotes → straight
-        .split_whitespace()
+    let mut s = text.to_string();
+
+    // 1. Remove invisible characters (soft hyphen, zero-width space, BOM)
+    s = s.replace(['\u{00AD}', '\u{200B}', '\u{FEFF}'], "");
+
+    // 2. Rejoin hyphenated line breaks BEFORE whitespace collapsing
+    s = rejoin_hyphenated_breaks(&s);
+
+    // 3. Replace paragraph markers
+    s = s.replace('¶', " ");
+
+    // 4. Normalize quote characters
+    s = s.replace(['\u{201C}', '\u{201D}'], "\"");  // smart double quotes
+    s = s.replace(['\u{2018}', '\u{2019}'], "'");    // smart single quotes
+
+    // 5. Normalize dashes to plain hyphen
+    s = s.replace(['\u{2014}', '\u{2013}'], "-");    // em dash, en dash
+
+    // 6. Normalize ellipsis and expand ligatures
+    s = s.replace('\u{2026}', "...");
+    s = s.replace('\u{FB01}', "fi");
+    s = s.replace('\u{FB02}', "fl");
+
+    // 7. Collapse whitespace and lowercase
+    s.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+/// Rejoin words split across lines by a hyphen.
+///
+/// Scans for pattern: word char + `-` + `\n` (with optional `\r` and
+/// trailing whitespace) + word char. Removes the hyphen and line break,
+/// joining the word fragments.
+///
+/// Uses a simple char-by-char scan — no regex dependency needed.
+fn rejoin_hyphenated_breaks(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut result = String::with_capacity(text.len());
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '-' && i > 0 && chars[i - 1].is_alphanumeric() {
+            // Look ahead: skip optional \r, require \n, skip optional whitespace
+            let mut j = i + 1;
+            if j < chars.len() && chars[j] == '\r' {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == '\n' {
+                j += 1;
+                // Skip optional whitespace after newline
+                while j < chars.len() && (chars[j] == ' ' || chars[j] == '\t') {
+                    j += 1;
+                }
+                // Next char must be alphanumeric (it's a word continuation)
+                if j < chars.len() && chars[j].is_alphanumeric() {
+                    // Skip the hyphen and line break — rejoin the word
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+
+    result
 }
 
 /// Maps text snippets to the PDF pages they appear on.
@@ -160,6 +223,41 @@ impl<'a> PageGrounder<'a> {
             }
         }
 
+        // --- Page boundary matching ---
+        // For snippets that span two consecutive pages, try matching
+        // against concatenated adjacent page pairs.
+        if !unmatched.is_empty() {
+            for page_num in 1..page_count {
+                if unmatched.is_empty() {
+                    break;
+                }
+
+                let page_a = self.extractor.extract_page(page_num)?.to_string();
+                let page_b = self.extractor.extract_page(page_num + 1)?;
+                let combined = format!("{} {}", page_a, page_b);
+                let normalized_combined = normalize_text(&combined);
+
+                let mut newly_matched = Vec::new();
+
+                for &idx in &unmatched {
+                    let normalized_snippet = normalize_text(snippets[idx]);
+                    if normalized_combined.contains(&normalized_snippet) {
+                        results[idx] = GroundingResult {
+                            snippet: snippets[idx].to_string(),
+                            page_number: Some(page_num),
+                            offset: None,
+                            match_type: MatchType::Normalized,
+                        };
+                        newly_matched.push(idx);
+                    }
+                }
+
+                for matched_idx in &newly_matched {
+                    unmatched.retain(|&i| i != *matched_idx);
+                }
+            }
+        }
+
         // Log warnings for snippets that weren't found
         for &idx in &unmatched {
             let truncated: String = snippets[idx].chars().take(80).collect();
@@ -180,24 +278,12 @@ mod tests {
 
         let mut builder = DocumentBuilder::new();
 
-        builder
-            .letter_page()
-            .heading(1, "Test Document")
-            .paragraph("This is page one with some sample text.")
-            .done();
-
-        builder
-            .letter_page()
-            .heading(1, "Chapter Two")
-            .paragraph("The quick brown fox jumps over the lazy dog.")
-            .done();
-
-        builder
-            .letter_page()
-            .heading(1, "Final Page")
-            .paragraph("Conclusion and summary of findings.")
-            .done();
-
+        builder.letter_page().heading(1, "Test Document")
+            .paragraph("This is page one with some sample text.").done();
+        builder.letter_page().heading(1, "Chapter Two")
+            .paragraph("The quick brown fox jumps over the lazy dog.").done();
+        builder.letter_page().heading(1, "Final Page")
+            .paragraph("Conclusion and summary of findings.").done();
         let bytes = builder.build().expect("Failed to build test PDF");
         PdfTextExtractor::from_bytes(bytes).expect("Failed to open test PDF")
     }
@@ -275,6 +361,63 @@ mod tests {
         assert_eq!(
             normalize_text("Awad\u{2019}s father"),
             "awad's father"
+        );
+    }
+
+    #[test]
+    fn test_normalize_dashes() {
+        assert_eq!(
+            normalize_text("money\u{2014}including fees"),
+            "money-including fees"
+        );
+        assert_eq!(
+            normalize_text("pages 10\u{2013}15"),
+            "pages 10-15"
+        );
+    }
+
+    #[test]
+    fn test_normalize_ligatures() {
+        assert_eq!(
+            normalize_text("the \u{FB01}rst \u{FB02}oor"),
+            "the first floor"
+        );
+    }
+
+    #[test]
+    fn test_normalize_ellipsis() {
+        assert_eq!(
+            normalize_text("and so on\u{2026}"),
+            "and so on..."
+        );
+    }
+
+    #[test]
+    fn test_normalize_invisible_chars() {
+        assert_eq!(
+            normalize_text("soft\u{00AD}hyphen zero\u{200B}width"),
+            "softhyphen zerowidth"
+        );
+    }
+
+    #[test]
+    fn test_rejoin_hyphenated_breaks() {
+        assert_eq!(
+            rejoin_hyphenated_breaks("defen-\ndant"),
+            "defendant"
+        );
+        assert_eq!(
+            rejoin_hyphenated_breaks("defen-\r\ndant"),
+            "defendant"
+        );
+        assert_eq!(
+            rejoin_hyphenated_breaks("defen-\n  dant"),
+            "defendant"
+        );
+        // Real hyphen (not at line break) should be preserved
+        assert_eq!(
+            rejoin_hyphenated_breaks("self-defense"),
+            "self-defense"
         );
     }
 
