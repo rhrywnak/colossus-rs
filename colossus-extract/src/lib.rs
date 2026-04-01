@@ -26,6 +26,7 @@
 
 pub mod error;
 pub mod prompt;
+pub mod resolver;
 pub mod schema;
 pub mod traits;
 pub mod types;
@@ -34,6 +35,7 @@ pub mod types;
 pub use error::PipelineError;
 pub use prompt::PromptBuilder;
 pub use schema::ExtractionSchema;
+pub use resolver::NormalizedEntityResolver;
 pub use traits::{EntityResolver, LlmProvider, TextSplitter};
 pub use types::{
     ExtractedEntity, ExtractedRelationship, ExtractionResult,
