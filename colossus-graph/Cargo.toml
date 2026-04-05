@@ -1,0 +1,23 @@
+[package]
+name = "colossus-graph"
+version = "0.1.0"
+edition = "2021"
+description = "Schema-agnostic Neo4j graph data access for Colossus applications"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = "2"
+tracing = { workspace = true }
+
+# neo4rs: async Neo4j Bolt driver.
+# Optional — consumer enables via feature flag.
+# Version 0.8 matches colossus-rag and colossus-legal/backend.
+neo4rs = { version = "0.8", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[features]
+default = []
+neo4j = ["dep:neo4rs"]
