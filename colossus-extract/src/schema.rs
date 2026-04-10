@@ -15,11 +15,91 @@ use std::path::Path;
 
 use crate::error::PipelineError;
 
+// ---------------------------------------------------------------------------
+// Domain-agnostic enums for schema metadata
+// ---------------------------------------------------------------------------
+
+/// How an extracted entity must be grounded (anchored) in the source document.
+///
+/// Each variant is domain-agnostic:
+/// - `Verbatim` — exact text match required (default)
+/// - `NameMatch` — entity name appears somewhere in the document
+/// - `HeadingMatch` — entity maps to a section title / heading
+/// - `Derived` — entity is inferred; provenance links required
+/// - `None` — not groundable in text (human-only annotation)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GroundingMode {
+    #[default]
+    Verbatim,
+    NameMatch,
+    HeadingMatch,
+    Derived,
+    None,
+}
+
+/// Extraction priority / exhaustiveness category for an entity type.
+///
+/// - `Foundation` — must be exhaustive; cannot be rejected by the LLM
+/// - `Structural` — grounded with dependency links to other entities
+/// - `Evidence` — standard grounded entity (default)
+/// - `Reference` — existence-check only (no deep extraction)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EntityCategory {
+    Foundation,
+    Structural,
+    #[default]
+    Evidence,
+    Reference,
+}
+
+/// Whether a document defines the skeleton (foundation) or links to one.
+///
+/// - `Foundation` — defines the case skeleton; completeness validation applies
+/// - `Evidence` — links to an existing foundation document (default)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentCategory {
+    Foundation,
+    #[default]
+    Evidence,
+}
+
+/// A rule that checks extraction completeness after the LLM pass.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CompletenessRule {
+    /// Require at least `min` entities of the given type.
+    EntityCount {
+        entity: String,
+        min: u32,
+        message: String,
+    },
+    /// Require that at least `min_percentage`% of `from` entities have
+    /// a `relationship` edge to a `to` entity.
+    RelationshipExists {
+        from: String,
+        relationship: String,
+        to: String,
+        min_percentage: u32,
+        message: String,
+    },
+}
+
 /// Complete extraction schema loaded from a YAML file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractionSchema {
     /// Document type this schema applies to (e.g. "complaint", "affidavit")
     pub document_type: String,
+
+    /// Schema version string (defaults to "1.0" for backward compatibility)
+    #[serde(default = "default_version")]
+    pub version: String,
+
+    /// Whether this document defines a foundation or links to one
+    #[serde(default)]
+    pub document_category: DocumentCategory,
 
     /// Human-readable description of this document type
     #[serde(default)]
@@ -34,6 +114,10 @@ pub struct ExtractionSchema {
     /// Valid patterns constraining which entity types can connect
     pub valid_patterns: Vec<PatternConfig>,
 
+    /// Post-extraction completeness checks
+    #[serde(default)]
+    pub completeness_rules: Vec<CompletenessRule>,
+
     /// Extraction rules included in the LLM prompt
     #[serde(default)]
     pub extraction_rules: Vec<String>,
@@ -44,6 +128,26 @@ pub struct ExtractionSchema {
 pub struct EntityTypeConfig {
     /// Entity type name (e.g. "Party", "FactualAllegation")
     pub name: String,
+
+    /// Extraction priority category (defaults to Evidence)
+    #[serde(default)]
+    pub category: EntityCategory,
+
+    /// Whether this entity type must be present in a valid extraction
+    #[serde(default)]
+    pub required: bool,
+
+    /// Minimum number of entities expected (0 = no minimum)
+    #[serde(default)]
+    pub min_count: u32,
+
+    /// How this entity must be grounded in the source text
+    #[serde(default)]
+    pub grounding_mode: GroundingMode,
+
+    /// Whether provenance links are required for this entity
+    #[serde(default)]
+    pub provenance_required: bool,
 
     /// Description included in the LLM prompt to guide extraction
     #[serde(default)]
@@ -86,6 +190,10 @@ pub struct PropertyConfig {
     /// Description included in the LLM prompt
     #[serde(default)]
     pub description: String,
+}
+
+fn default_version() -> String {
+    "1.0".to_string()
 }
 
 fn default_property_type() -> String {
@@ -176,6 +284,78 @@ impl ExtractionSchema {
             return Err(PipelineError::Schema(
                 "Duplicate relationship type names found".to_string()
             ));
+        }
+
+        // Foundation documents need at least one foundation + required entity
+        if self.document_category == DocumentCategory::Foundation {
+            let has_foundation = self.entity_types.iter().any(|e| {
+                e.category == EntityCategory::Foundation && e.required
+            });
+            if !has_foundation {
+                return Err(PipelineError::Schema(
+                    "Document category is foundation but no entity type has \
+                     category = foundation with required = true"
+                        .to_string(),
+                ));
+            }
+        }
+
+        // Completeness rules must reference existing types
+        for rule in &self.completeness_rules {
+            match rule {
+                CompletenessRule::EntityCount { entity, .. } => {
+                    if !entity_names.contains(entity.as_str()) {
+                        return Err(PipelineError::Schema(format!(
+                            "Completeness rule references unknown entity type '{entity}'"
+                        )));
+                    }
+                }
+                CompletenessRule::RelationshipExists {
+                    from,
+                    relationship,
+                    to,
+                    ..
+                } => {
+                    if !entity_names.contains(from.as_str()) {
+                        return Err(PipelineError::Schema(format!(
+                            "Completeness rule references unknown entity type '{from}'"
+                        )));
+                    }
+                    if !entity_names.contains(to.as_str()) {
+                        return Err(PipelineError::Schema(format!(
+                            "Completeness rule references unknown entity type '{to}'"
+                        )));
+                    }
+                    if !relationship_names.contains(relationship.as_str()) {
+                        return Err(PipelineError::Schema(format!(
+                            "Completeness rule references unknown relationship type \
+                             '{relationship}'"
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Required entities must have min_count > 0
+        for entity in &self.entity_types {
+            if entity.required && entity.min_count == 0 {
+                return Err(PipelineError::Schema(format!(
+                    "Entity type '{}' is required but min_count is 0",
+                    entity.name,
+                )));
+            }
+        }
+
+        // Warn (don't error) if derived grounding lacks provenance flag
+        for entity in &self.entity_types {
+            if entity.grounding_mode == GroundingMode::Derived
+                && !entity.provenance_required
+            {
+                tracing::warn!(
+                    entity = %entity.name,
+                    "Entity has grounding_mode = derived but provenance_required = false"
+                );
+            }
         }
 
         Ok(())

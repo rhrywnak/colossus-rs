@@ -1,0 +1,124 @@
+document_type: complaint
+version: "2.0"
+document_category: foundation
+description: "Legal complaint — foundation document defining case structure"
+
+entity_types:
+  - name: Party
+    category: foundation
+    required: true
+    min_count: 2
+    grounding_mode: name_match
+    description: "A person or organization involved in the case"
+    properties:
+      - name: full_name
+        type: string
+        required: true
+        description: "Full legal name as it appears in the document"
+      - name: role
+        type: string
+        required: true
+        description: "Role in the case (plaintiff, defendant, third_party)"
+      - name: entity_kind
+        type: string
+        description: "Person or organization"
+
+  - name: LegalCount
+    category: foundation
+    required: true
+    min_count: 1
+    grounding_mode: heading_match
+    description: "A cause of action asserted in the complaint"
+    properties:
+      - name: count_number
+        type: integer
+        required: true
+        description: "Count number in the complaint"
+      - name: legal_basis
+        type: string
+        required: true
+        description: "The legal theory or statute"
+      - name: description
+        type: string
+        description: "Brief description of the cause of action"
+
+  - name: ComplaintAllegation
+    category: structural
+    required: true
+    min_count: 1
+    grounding_mode: verbatim
+    description: "A specific factual claim made in the complaint"
+    properties:
+      - name: paragraph_number
+        type: string
+        description: "Paragraph number in the complaint"
+      - name: summary
+        type: string
+        required: true
+        description: "Brief summary of the allegation"
+
+  - name: Harm
+    category: structural
+    required: false
+    grounding_mode: derived
+    provenance_required: true
+    description: "A damage or harm claimed, linked to supporting allegations"
+    properties:
+      - name: damages_type
+        type: string
+        description: "Type of damages (financial, emotional, procedural)"
+      - name: amount
+        type: number
+        description: "Dollar amount if specified"
+
+relationship_types:
+  - name: SUPPORTS
+    description: "Allegation supports a legal count"
+  - name: STATED_BY
+    description: "Allegation stated by a party"
+  - name: ABOUT
+    description: "Allegation about a party"
+  - name: DERIVED_FROM
+    description: "Harm derived from supporting allegations"
+  - name: CONTAINED_IN
+    description: "Entity contained in a document"
+
+valid_patterns:
+  - from: ComplaintAllegation
+    relationship: SUPPORTS
+    to: LegalCount
+  - from: ComplaintAllegation
+    relationship: STATED_BY
+    to: Party
+  - from: ComplaintAllegation
+    relationship: ABOUT
+    to: Party
+  - from: Harm
+    relationship: DERIVED_FROM
+    to: ComplaintAllegation
+  - from: Party
+    relationship: CONTAINED_IN
+    to: Party
+
+completeness_rules:
+  - type: entity_count
+    entity: Party
+    min: 2
+    message: "Expected at least plaintiff + defendant"
+  - type: entity_count
+    entity: LegalCount
+    min: 1
+    message: "No legal counts found — extraction likely failed"
+  - type: relationship_exists
+    from: ComplaintAllegation
+    relationship: SUPPORTS
+    to: LegalCount
+    min_percentage: 50
+    message: "Less than 50% of allegations link to a legal count"
+
+extraction_rules:
+  - "Every verbatim_quote must be an exact substring of the document text"
+  - "Identify all parties by their full legal name and role"
+  - "Link factual allegations to the legal counts they support"
+  - "Include paragraph numbers when available"
+  - "For Harm entities, provide provenance links to supporting allegations"

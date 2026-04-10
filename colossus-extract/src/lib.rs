@@ -34,7 +34,9 @@ pub mod types;
 // --- Public API re-exports ---
 pub use error::PipelineError;
 pub use prompt::PromptBuilder;
-pub use schema::ExtractionSchema;
+pub use schema::{
+    CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
+};
 pub use resolver::NormalizedEntityResolver;
 pub use traits::{EntityResolver, LlmProvider, TextSplitter};
 pub use types::{

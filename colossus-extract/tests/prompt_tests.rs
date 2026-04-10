@@ -170,6 +170,23 @@ fn test_missing_template_returns_error() {
 }
 
 #[test]
+fn test_v2_extraction_prompt_contains_grounding_mode() {
+    let schema_path = fixtures_dir().join("schemas/complaint_v2.yaml");
+    let schema = ExtractionSchema::from_file(&schema_path)
+        .expect("v2 schema should load");
+    let mut builder = PromptBuilder::new(&template_dir());
+    let prompt = builder.build_extraction_prompt(
+        &schema,
+        "Sample document text.",
+        None,
+        None,
+        None,
+    ).expect("should build prompt");
+    assert!(prompt.contains("name_match"),
+        "Prompt should contain 'name_match' from Party's grounding_mode");
+}
+
+#[test]
 fn test_prompt_contains_pass1_structure() {
     let schema = load_complaint_schema();
     let mut builder = PromptBuilder::new(&template_dir());
