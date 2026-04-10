@@ -36,6 +36,7 @@ fn test_build_extraction_prompt_returns_nonempty() {
         None,
         None,
         None,
+        None,
     ).expect("should build prompt");
     assert!(!prompt.is_empty(), "Prompt should not be empty");
 }
@@ -47,6 +48,7 @@ fn test_extraction_prompt_contains_schema_json() {
     let prompt = builder.build_extraction_prompt(
         &schema,
         "Sample document text.",
+        None,
         None,
         None,
         None,
@@ -69,6 +71,7 @@ fn test_extraction_prompt_contains_document_text() {
         None,
         None,
         None,
+        None,
     ).unwrap();
     assert!(prompt.contains(doc_text),
         "Prompt should contain the document text verbatim");
@@ -84,6 +87,7 @@ fn test_extraction_prompt_with_rules_file() {
         None,
         None,
         Some("global_rules.md"),
+        None,
     ).unwrap();
     assert!(prompt.contains("verbatim_quote"),
         "Prompt should include content from global_rules.md");
@@ -101,6 +105,7 @@ fn test_extraction_prompt_with_context() {
         Some("Previously processed: Motion to Dismiss"),
         None,
         None,
+        None,
     ).unwrap();
     assert!(prompt.contains("Motion to Dismiss"),
         "Prompt should contain the context");
@@ -113,6 +118,7 @@ fn test_extraction_prompt_none_context_gets_default() {
     let prompt = builder.build_extraction_prompt(
         &schema,
         "Document text.",
+        None,
         None,
         None,
         None,
@@ -131,6 +137,7 @@ fn test_extraction_prompt_none_admin_instructions_gets_default() {
         None,
         None,
         None,
+        None,
     ).unwrap();
     assert!(prompt.contains("None."),
         "Prompt should contain default admin instructions when None");
@@ -146,6 +153,7 @@ fn test_extraction_prompt_with_admin_instructions() {
         None,
         Some("Focus on damages calculations."),
         None,
+        None,
     ).unwrap();
     assert!(prompt.contains("Focus on damages calculations"),
         "Prompt should contain admin instructions");
@@ -159,6 +167,7 @@ fn test_missing_template_returns_error() {
     let result = builder.build_extraction_prompt(
         &schema,
         "Text.",
+        None,
         None,
         None,
         None,
@@ -181,6 +190,7 @@ fn test_v2_extraction_prompt_contains_grounding_mode() {
         None,
         None,
         None,
+        None,
     ).expect("should build prompt");
     assert!(prompt.contains("name_match"),
         "Prompt should contain 'name_match' from Party's grounding_mode");
@@ -196,9 +206,28 @@ fn test_prompt_contains_pass1_structure() {
         None,
         None,
         None,
+        None,
     ).unwrap();
     // Verify template structure is present
     assert!(prompt.contains("# Document extraction"), "Should have heading");
     assert!(prompt.contains("## Schema"), "Should have Schema section");
     assert!(prompt.contains("## Output format"), "Should have Output section");
+}
+
+#[test]
+fn test_extraction_prompt_with_custom_template() {
+    let schema = load_complaint_schema();
+    let mut builder = PromptBuilder::new(&template_dir());
+    let prompt = builder.build_extraction_prompt(
+        &schema,
+        "Document text.",
+        None,
+        None,
+        None,
+        Some("custom_template.md"),
+    ).expect("should build with custom template");
+    assert!(prompt.starts_with("CUSTOM"),
+        "Prompt should start with CUSTOM: got '{}'", &prompt[..20.min(prompt.len())]);
+    assert!(prompt.ends_with("END"),
+        "Prompt should end with END");
 }

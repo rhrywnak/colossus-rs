@@ -49,6 +49,9 @@ impl PromptBuilder {
     }
 
     /// Build a Pass 1 extraction prompt.
+    ///
+    /// `template_name` — optional template filename. Defaults to
+    /// `"pass1_template.md"` if `None`.
     pub fn build_extraction_prompt(
         &mut self,
         schema: &ExtractionSchema,
@@ -56,8 +59,11 @@ impl PromptBuilder {
         context: Option<&str>,
         admin_instructions: Option<&str>,
         rules_file: Option<&str>,
+        template_name: Option<&str>,
     ) -> Result<String, PipelineError> {
-        let template = self.load_template("pass1_template.md")?.to_string();
+        let template = self
+            .load_template(template_name.unwrap_or("pass1_template.md"))?
+            .to_string();
 
         let schema_json = schema.to_prompt_json()?;
 
