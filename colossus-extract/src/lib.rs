@@ -33,7 +33,7 @@ pub mod types;
 
 // --- Public API re-exports ---
 pub use error::PipelineError;
-pub use prompt::PromptBuilder;
+pub use prompt::{PromptArtifact, PromptBuilder};
 pub use schema::{
     CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
 };
