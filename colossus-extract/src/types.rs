@@ -7,7 +7,93 @@
 //! `#[serde(rename_all = "snake_case")]` ensures JSON keys match Rust
 //! naming conventions automatically.
 
+use std::collections::HashMap;
+
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// A chunk of text split from a document.
+///
+/// ## Rust Learning: Why not just a String?
+///
+/// We need to track which chunk a piece of text came from so we can:
+/// 1. Prefix entity IDs with chunk index (prevents collisions)
+/// 2. Store per-chunk metrics (tokens, duration, errors)
+/// 3. Link extracted entities back to their source chunk
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextChunk {
+    /// The chunk text content.
+    pub text: String,
+    /// Position of this chunk in the document (0-based).
+    pub index: usize,
+}
+
+/// Result of extracting entities from a single text chunk.
+///
+/// This struct is used with rig's `prompt_typed<T>` for structured output.
+/// The `JsonSchema` derive lets rig generate a JSON schema that the LLM
+/// API uses for constrained decoding — guaranteeing the response matches
+/// this exact shape.
+///
+/// ## Rust Learning: Multiple derive macros
+///
+/// `JsonSchema` comes from the `schemars` crate. It generates a JSON Schema
+/// definition at compile time from the struct fields. This schema is sent
+/// to the LLM API, which constrains its output to match. No JSON parsing
+/// errors possible.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ChunkExtractionResult {
+    /// Entities extracted from this chunk.
+    pub nodes: Vec<ExtractedNode>,
+    /// Relationships between entities in this chunk.
+    pub relationships: Vec<ExtractedRel>,
+}
+
+/// A single entity extracted from a chunk by the LLM.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExtractedNode {
+    /// Unique ID within this chunk (e.g., "0", "1", "2").
+    /// Will be prefixed with chunk index after extraction.
+    pub id: String,
+    /// Entity type label from the schema (e.g., "Person", "Allegation").
+    pub label: String,
+    /// Properties extracted for this entity.
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+/// A relationship between two entities within a chunk.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExtractedRel {
+    /// Relationship type from the schema (e.g., "ALLEGED_BY", "FILED_AGAINST").
+    #[serde(rename = "type")]
+    pub rel_type: String,
+    /// ID of the source node (within this chunk).
+    pub start_node_id: String,
+    /// ID of the target node (within this chunk).
+    pub end_node_id: String,
+    /// Properties on the relationship.
+    #[serde(default)]
+    pub properties: HashMap<String, serde_json::Value>,
+}
+
+/// Statistics from graph pruning — what was removed and why.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PruningStats {
+    /// Nodes removed because their label was not in the schema.
+    pub nodes_not_in_schema: usize,
+    /// Nodes removed because they were missing required properties.
+    pub nodes_missing_properties: usize,
+    /// Relationships removed because their type was not in the schema.
+    pub rels_not_in_schema: usize,
+    /// Relationships removed because start or end node was pruned.
+    pub rels_orphaned: usize,
+    /// Relationships removed because the pattern was invalid.
+    pub rels_invalid_pattern: usize,
+    /// Total nodes pruned.
+    pub total_nodes_pruned: usize,
+    /// Total relationships pruned.
+    pub total_rels_pruned: usize,
+}
 
 /// A single entity extracted by the LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]

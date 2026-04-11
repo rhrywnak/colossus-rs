@@ -28,6 +28,7 @@ pub mod error;
 pub mod prompt;
 pub mod resolver;
 pub mod schema;
+pub mod splitter;
 pub mod traits;
 pub mod types;
 
@@ -38,8 +39,10 @@ pub use schema::{
     CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
 };
 pub use resolver::NormalizedEntityResolver;
-pub use traits::{EntityResolver, LlmProvider, TextSplitter};
+pub use splitter::FixedSizeSplitter;
+pub use traits::{ChunkExtractor, EntityResolver, LlmProvider, TextSplitter};
 pub use types::{
-    ExtractedEntity, ExtractedRelationship, ExtractionResult,
-    GroundingStatus, KnownEntity, ResolvedEntity, ResolutionMethod,
+    ChunkExtractionResult, ExtractedEntity, ExtractedNode, ExtractedRel, ExtractedRelationship,
+    ExtractionResult, GroundingStatus, KnownEntity, PruningStats, ResolutionMethod,
+    ResolvedEntity, TextChunk,
 };

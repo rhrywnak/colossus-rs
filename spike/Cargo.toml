@@ -9,10 +9,11 @@ publish = false
 # This keeps the spike isolated and easy to delete later.
 
 [dependencies]
-rig-core = "0.31"
+rig-core = "0.33"
 rig-qdrant = "0.1"
 rig-fastembed = "0.2"
 qdrant-client = { version = "1.14", default-features = false }
+schemars = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
