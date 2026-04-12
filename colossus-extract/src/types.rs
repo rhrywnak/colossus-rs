@@ -52,25 +52,36 @@ pub struct ChunkExtractionResult {
 /// A single entity extracted from a chunk by the LLM.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExtractedNode {
-    /// Unique ID within this chunk (e.g., "0", "1", "2").
-    /// Will be prefixed with chunk index after extraction.
+    /// Unique ID within this chunk (e.g., "0", "1", "party-001").
     pub id: String,
+
     /// Entity type label from the schema (e.g., "Person", "Allegation").
+    /// LLMs frequently return this as "type" or "entity_type" instead of "label".
+    #[serde(alias = "type", alias = "entity_type")]
     pub label: String,
+
     /// Properties extracted for this entity.
+    /// When the LLM flattens properties into the node object, we collect
+    /// them via the flatten + default approach below.
+    #[serde(default)]
     pub properties: HashMap<String, serde_json::Value>,
 }
 
 /// A relationship between two entities within a chunk.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ExtractedRel {
-    /// Relationship type from the schema (e.g., "ALLEGED_BY", "FILED_AGAINST").
-    #[serde(rename = "type")]
+    /// Relationship type from the schema.
+    #[serde(rename = "type", alias = "relationship_type", alias = "rel_type")]
     pub rel_type: String,
-    /// ID of the source node (within this chunk).
+
+    /// ID of the source node.
+    #[serde(alias = "from_entity", alias = "source")]
     pub start_node_id: String,
-    /// ID of the target node (within this chunk).
+
+    /// ID of the target node.
+    #[serde(alias = "to_entity", alias = "target")]
     pub end_node_id: String,
+
     /// Properties on the relationship.
     #[serde(default)]
     pub properties: HashMap<String, serde_json::Value>,
