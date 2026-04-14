@@ -30,7 +30,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::PipelineError;
-use crate::schema::JobRow;
+use crate::schema::{JobControl, JobRow, JobStatus};
 
 /// Attempt to claim one ready job from the queue.
 ///
@@ -60,17 +60,17 @@ pub async fn claim(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'running',
-            worker_id         = $1,
+            status            = $1,
+            worker_id         = $2,
             step_started_at   = NOW(),
             step_completed_at = NULL,
             last_heartbeat_at = NOW(),
-            timeout_at        = $2,
+            timeout_at        = $3,
             updated_at        = NOW()
         WHERE id = (
             SELECT id FROM pipeline_jobs
-            WHERE status = 'ready'
-              AND control = 'none'
+            WHERE status = $4
+              AND control = $5
               AND wakeup_at <= NOW()
             ORDER BY priority DESC, wakeup_at ASC
             LIMIT 1
@@ -79,8 +79,11 @@ pub async fn claim(
         RETURNING *
         "#,
     )
+    .bind(JobStatus::Running.as_str())
     .bind(worker_id)
     .bind(timeout_at)
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::None.as_str())
     .fetch_optional(db)
     .await?;
 
@@ -110,18 +113,19 @@ pub async fn advance(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'ready',
-            current_step      = $1,
-            step_data         = $2,
-            result            = result || $3,
+            status            = $1,
+            current_step      = $2,
+            step_data         = $3,
+            result            = result || $4,
             tried             = 0,
             error             = NULL,
             step_completed_at = NOW(),
             wakeup_at         = NOW(),
             updated_at        = NOW()
-        WHERE id = $4
+        WHERE id = $5
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
     .bind(next_step_name)
     .bind(next_step_data)
     .bind(step_result)
@@ -145,15 +149,16 @@ pub async fn complete(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'completed',
-            result            = result || $1,
+            status            = $1,
+            result            = result || $2,
             error             = NULL,
             step_completed_at = NOW(),
             completed_at      = NOW(),
             updated_at        = NOW()
-        WHERE id = $2
+        WHERE id = $3
         "#,
     )
+    .bind(JobStatus::Completed.as_str())
     .bind(step_result)
     .bind(job_id)
     .execute(db)
@@ -176,13 +181,15 @@ pub async fn park(
         r#"
         UPDATE pipeline_jobs
         SET
-            status     = 'ready',
-            control    = 'waiting_for_input',
-            step_data  = $1,
+            status     = $1,
+            control    = $2,
+            step_data  = $3,
             updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $4
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::WaitingForInput.as_str())
     .bind(parked_step_data)
     .bind(job_id)
     .execute(db)
@@ -205,13 +212,17 @@ pub async fn request_cancel(
         r#"
         UPDATE pipeline_jobs
         SET
-            control    = 'cancel_requested',
+            control    = $1,
             updated_at = NOW()
-        WHERE id = $1
-          AND status NOT IN ('completed', 'failed', 'cancelled')
+        WHERE id = $2
+          AND status NOT IN ($3, $4, $5)
         "#,
     )
+    .bind(JobControl::CancelRequested.as_str())
     .bind(job_id)
+    .bind(JobStatus::Completed.as_str())
+    .bind(JobStatus::Failed.as_str())
+    .bind(JobStatus::Cancelled.as_str())
     .execute(db)
     .await?;
 
@@ -231,14 +242,16 @@ pub async fn cancel(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'failed',
-            control           = 'none',
+            status            = $1,
+            control           = $2,
             error             = 'Cancelled by user',
             step_completed_at = NOW(),
             updated_at        = NOW()
-        WHERE id = $1
+        WHERE id = $3
         "#,
     )
+    .bind(JobStatus::Failed.as_str())
+    .bind(JobControl::None.as_str())
     .bind(job_id)
     .execute(db)
     .await?;
@@ -261,15 +274,16 @@ pub async fn fail_with_retry(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'ready',
+            status            = $1,
             tried             = tried + 1,
-            error             = $1,
-            wakeup_at         = NOW() + ($2 * INTERVAL '1 second'),
+            error             = $2,
+            wakeup_at         = NOW() + ($3 * INTERVAL '1 second'),
             step_completed_at = NOW(),
             updated_at        = NOW()
-        WHERE id = $3
+        WHERE id = $4
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
     .bind(error)
     .bind(delay_secs)
     .bind(job_id)
@@ -292,13 +306,14 @@ pub async fn fail_exhausted(
         r#"
         UPDATE pipeline_jobs
         SET
-            status            = 'failed',
-            error             = $1,
+            status            = $1,
+            error             = $2,
             step_completed_at = NOW(),
             updated_at        = NOW()
-        WHERE id = $2
+        WHERE id = $3
         "#,
     )
+    .bind(JobStatus::Failed.as_str())
     .bind(error)
     .bind(job_id)
     .execute(db)
@@ -320,19 +335,24 @@ pub async fn resume(
         r#"
         UPDATE pipeline_jobs
         SET
-            status     = 'ready',
-            control    = 'none',
+            status     = $1,
+            control    = $2,
             error      = NULL,
             wakeup_at  = NOW(),
             updated_at = NOW()
-        WHERE id = $1
+        WHERE id = $3
           AND (
-              (status = 'failed')
-              OR (status = 'ready' AND control = 'waiting_for_input')
+              (status = $4)
+              OR (status = $5 AND control = $6)
           )
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::None.as_str())
     .bind(job_id)
+    .bind(JobStatus::Failed.as_str())
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::WaitingForInput.as_str())
     .execute(db)
     .await?;
 
@@ -357,20 +377,24 @@ pub async fn advance_from_park(
         r#"
         UPDATE pipeline_jobs
         SET
-            status       = 'ready',
-            control      = 'none',
-            current_step = $1,
-            step_data    = $2,
+            status       = $1,
+            control      = $2,
+            current_step = $3,
+            step_data    = $4,
             wakeup_at    = NOW(),
             updated_at   = NOW()
-        WHERE id = $3
-          AND status = 'ready'
-          AND control = 'waiting_for_input'
+        WHERE id = $5
+          AND status = $6
+          AND control = $7
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::None.as_str())
     .bind(next_step_name)
     .bind(next_step_data)
     .bind(job_id)
+    .bind(JobStatus::Ready.as_str())
+    .bind(JobControl::WaitingForInput.as_str())
     .execute(db)
     .await?;
 
@@ -399,15 +423,17 @@ pub async fn recover_zombie(
         r#"
         UPDATE pipeline_jobs
         SET
-            status     = 'ready',
-            wakeup_at  = NOW() + ($1 * INTERVAL '1 second'),
+            status     = $1,
+            wakeup_at  = NOW() + ($2 * INTERVAL '1 second'),
             updated_at = NOW()
-        WHERE status = 'running'
-          AND last_heartbeat_at < NOW() - ($2 * INTERVAL '1 second')
+        WHERE status = $3
+          AND last_heartbeat_at < NOW() - ($4 * INTERVAL '1 second')
         RETURNING id, current_step, tried, max_retries
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
     .bind(wakeup_secs)
+    .bind(JobStatus::Running.as_str())
     .bind(threshold_secs)
     .fetch_all(db)
     .await?;
@@ -427,16 +453,18 @@ pub async fn recover_timeout(
         r#"
         UPDATE pipeline_jobs
         SET
-            status     = 'ready',
-            wakeup_at  = NOW() + ($1 * INTERVAL '1 second'),
+            status     = $1,
+            wakeup_at  = NOW() + ($2 * INTERVAL '1 second'),
             updated_at = NOW()
-        WHERE status = 'running'
+        WHERE status = $3
           AND timeout_at IS NOT NULL
           AND timeout_at < NOW()
         RETURNING id, current_step, tried, max_retries
         "#,
     )
+    .bind(JobStatus::Ready.as_str())
     .bind(wakeup_secs)
+    .bind(JobStatus::Running.as_str())
     .fetch_all(db)
     .await?;
 

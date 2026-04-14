@@ -94,6 +94,28 @@ fn job_control_unknown_string_deserialize_fails() {
     );
 }
 
+// -- JobStatus::as_str -------------------------------------------------------
+
+#[test]
+fn job_status_as_str_matches_serde_serialization() {
+    // as_str() and serde serialization must always agree.
+    // If they diverge, SQL binds and JSON responses show different values.
+    assert_eq!(JobStatus::Ready.as_str(), "ready");
+    assert_eq!(JobStatus::Running.as_str(), "running");
+    assert_eq!(JobStatus::Completed.as_str(), "completed");
+    assert_eq!(JobStatus::Failed.as_str(), "failed");
+    assert_eq!(JobStatus::Cancelled.as_str(), "cancelled");
+}
+
+// -- JobControl::as_str ------------------------------------------------------
+
+#[test]
+fn job_control_as_str_matches_serde_serialization() {
+    assert_eq!(JobControl::None.as_str(), "none");
+    assert_eq!(JobControl::CancelRequested.as_str(), "cancel_requested");
+    assert_eq!(JobControl::WaitingForInput.as_str(), "waiting_for_input");
+}
+
 // -- JobRow round-trip --------------------------------------------------------
 
 #[test]

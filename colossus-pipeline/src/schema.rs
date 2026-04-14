@@ -32,6 +32,23 @@ pub enum JobStatus {
     Cancelled,
 }
 
+impl JobStatus {
+    /// Return the database string representation of this status value.
+    ///
+    /// This is the single source of truth for status strings —
+    /// used when binding to SQL parameters so the string is never
+    /// manually typed in query code.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JobStatus::Ready => "ready",
+            JobStatus::Running => "running",
+            JobStatus::Completed => "completed",
+            JobStatus::Failed => "failed",
+            JobStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
 /// Control signals set by external actors (API handlers), read by the Worker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
@@ -43,6 +60,19 @@ pub enum JobControl {
     CancelRequested,
     /// Job is parked waiting for external input (e.g., human review).
     WaitingForInput,
+}
+
+impl JobControl {
+    /// Return the database string representation of this control value.
+    ///
+    /// Used when binding to SQL parameters — never type control strings manually.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JobControl::None => "none",
+            JobControl::CancelRequested => "cancel_requested",
+            JobControl::WaitingForInput => "waiting_for_input",
+        }
+    }
 }
 
 /// A complete row from the pipeline_jobs table.
