@@ -158,3 +158,7 @@ pub fn step_name_of<T>() -> &'static str {
         None => full,
     }
 }
+
+#[cfg(test)]
+#[path = "step_tests.rs"]
+mod tests;
