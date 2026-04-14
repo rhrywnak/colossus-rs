@@ -1,28 +1,39 @@
-# CLAUDE.md — Colossus-Legal
+# CLAUDE.md — colossus-rs
 
-> **Read this FIRST.** Then read `docs/CLAUDE_CODE_INSTRUCTIONS.md` for full standards.
+> **Read this FIRST before any task.**
 
 ## Project
 
-**Colossus-Legal** — Legal document analysis and case management system (Awad v. CFS/Phillips)
-- **Backend:** Rust + Axum (port 3403) → `backend/`
-- **Frontend:** React + Vite + TS (port 5473) → `frontend/`
-- **Database:** Neo4j 5.x (DEV: `bolt://10.10.100.200:7687`)
-- **Vector DB:** Qdrant (DEV: REST `http://10.10.100.200:6333`, gRPC port 6334)
-- **RAG Pipeline:** colossus-rag crate (Rig framework + Claude API)
-- **Auth:** Authentik SSO → Traefik ForwardAuth → X-authentik-* headers
-- **Shared Libraries:** colossus-rs workspace (colossus-auth, colossus-rag)
+**colossus-rs** — Shared Rust library workspace for Colossus applications.
+This is a library workspace. It has no binary, no HTTP server, no frontend,
+no Ansible deployment, and no containers. It is consumed as a git dependency
+by colossus-legal and colossus-ai.
 
-**Current Phase:** Deployment Stabilization (post-audit)
-**Repos:** colossus-legal, colossus-rs, colossus-ansible, colossus-homelab
+### Crates in this workspace
+
+| Crate | Description |
+|-------|-------------|
+| colossus-auth | Authentik + Axum authentication integration |
+| colossus-extract | Document extraction types, traits, providers, schema loader |
+| colossus-rag | RAG pipeline (retriever, expander, synthesizer, decomposer) |
+| colossus-pdf | PDF text extraction |
+| colossus-graph | Neo4j query functions (domain-agnostic) |
+| colossus-pipeline | Async job pipeline framework (domain-agnostic) ← ACTIVE PHASE |
+
+### Current phase
+
+**Phase PV — colossus-pipeline crate build (P1-1 through P1-15)**
+Design doc: COLOSSUS_PIPELINE_DESIGN_v5_2.md
+Task tracker: COLOSSUS_PIPELINE_TASK_TRACKER_v1_1.md
+Branch: main
 
 ---
 
 ## Human Context
 
 **Developer:** Roman — 45 years IT, CS degree, retired, learning Rust.
-- Explain patterns when you use them
-- Reference `docs/RUST-PATTERNS.md` for pattern examples
+- Explain every Rust pattern you use with a `## Rust Learning:` doc comment
+- Reference patterns in doc comments, not in chat
 - Clear explanations over terse code
 - Working code over perfect code
 
@@ -31,248 +42,174 @@
 ## The Golden Rules
 
 ```
- 1. cargo check after EVERY change
- 2. Never accumulate more than 10 errors
- 3. No module over 300 lines (code lines, excluding doc comments)
- 4. No function over 50 lines
- 5. Pre-Coding Analysis BEFORE any code
- 6. Wait for "Proceed" before implementing
- 7. Every HTTP call MUST have a timeout
- 8. No .unwrap() or .expect() in production handlers
- 9. No plaintext secrets in code, config, or Butane files
-10. No :latest tags on container images
-11. Audit before deploying — verify the full path, not just the component
+1. cargo check after EVERY change
+2. Never accumulate more than 10 errors
+3. No module over 300 lines (code lines, excluding doc comments)
+4. No function over 50 lines
+5. Tests MUST pass before cargo build — a clean compile is NOT verification
+6. Never bump version numbers — Roman does that
+7. Every module, struct, trait, and public function MUST have a doc comment
+   explaining what it does AND why it exists in this system
+8. No magic strings or numbers — use constants
+9. No .unwrap() or .expect() in library code — use ? or explicit error handling
+10. Single repo only — never reference files in colossus-legal or any other repo
 ```
 
 ---
 
-## Deployment & Configuration Rules
+## Doc Comment Requirement (MANDATORY)
 
-These rules exist because of real failures found in the March 2026 cross-repo audit.
+Every file must have a `//!` module doc comment at the top:
 
-### Secrets
-- **NEVER** hardcode passwords, API keys, or tokens in source files, Butane configs, or scripts
-- Secrets belong in Ansible Vault (`vault.yml`) or `.env` files that are gitignored
-- `.env` files MUST be in `.gitignore` — verify before first commit
-- If a secret is accidentally committed, it MUST be rotated immediately
+```rust
+//! colossus-pipeline/src/worker/heartbeat.rs
+//!
+//! Heartbeat task for pipeline job liveness tracking.
+//!
+//! One-sentence description of what this module does.
+//! One-sentence description of WHY it exists (what problem it solves).
+//!
+//! ## Rust Learning: [pattern name]
+//!
+//! Explanation of the key Rust pattern used in this module.
+```
 
-### Environment Variables
-- All config values that differ between DEV and PROD must be env vars
-- Every env var the backend reads must exist in the Ansible template (`colossus-legal-backend.env.j2`)
-- When adding a new env var: update `config.rs` + Ansible template + group_vars + vault (if secret)
-- Use sensible defaults for local dev, but log a warning when defaults are used
+Every public struct, enum, trait, and function must have a `///` doc comment:
 
-### Timeouts (MANDATORY)
-- **Frontend:** Every `authFetch` call must use `AbortController` with a timeout signal
-  - Normal endpoints: 30 seconds
-  - `/ask` (RAG synthesis): 90 seconds
-- **Backend:** Every `reqwest::Client` must be built with `.timeout()` and `.connect_timeout()`
-- **Backend:** Share one `reqwest::Client` via AppState — do not create per-request
-- **Backend:** qdrant-client must have timeout configured
-
-### Container Images
-- Always pin to specific version tags (e.g., `v0.5.4`), never `:latest`
-- Update Butane files when container versions change
-- Version in `/api/status` must use `env!("CARGO_PKG_VERSION")`, not a hardcoded string
-
-### Route Patterns
-- Current state: mixed (`/ask` vs `/api/me`) — documented tech debt
-- When adding new routes: follow the existing pattern for that area
-- Do not add `/api/` prefix to existing non-prefixed routes without migration plan
-
-### Docker Builds
-- Never suppress build errors (`2>/dev/null || true` is forbidden)
-- `.fastembed_cache/` must be in `.gitignore` (ONNX models are 500MB+)
-- The `build-release.sh` in colossus-ansible is the canonical build script
+```rust
+/// Short description of what this is.
+///
+/// Longer explanation of why it exists and how it fits in the system.
+/// Include Rust Learning notes when a non-obvious pattern is used.
+pub struct MyStruct { ... }
+```
 
 ---
 
-## Mandatory Pre-Coding Process
+## Pre-Coding Process
 
-**For EVERY task, provide Pre-Coding Analysis first:**
+For every task, report these before writing any code:
 
-```markdown
-## Pre-Coding Analysis for [Task ID]
-
-### Task Understanding
-[What will be implemented]
-
-### Branch Verification
-- Current: `feature/xxx`
-- Clean: YES/NO
-
-### Files to Modify
-| File | Changes |
-|------|---------|
-
-### Files to Create
-| File | Purpose | Est. Lines |
-|------|---------|------------|
-
-### Env Vars / Config Changes
-| Variable | Where to Add | Default |
-|----------|-------------|---------|
-(Leave empty if none)
-
-### Rust Patterns to Implement
-| Pattern | Example |
-|---------|---------|
-
-### Tests to Write
-| Test Name | Description |
-|-----------|-------------|
-
-### Deployment Impact
-[Does this change require: new env vars? Ansible template update? Container rebuild? Traefik config change? If none, say "None — code-only change"]
-
-### Potential Issues
-[Any concerns]
+```
+### Files to read (report contents before modifying)
+### Files to modify (exact paths)
+### Files to create (exact paths)
+### Tests to write (names and what they verify)
+### Potential issues
 ```
 
-**STOP. Wait for "Proceed" before writing code.**
+Then proceed — no explicit "Proceed" gate required for colossus-rs tasks
+unless the task instruction specifies a STOP gate.
 
 ---
 
 ## Post-Coding Requirements
 
 ```bash
-git diff --name-only    # Only approved files?
-cargo build             # Compiles?
-cargo test              # Tests pass?
-cargo clippy            # No warnings?
+cargo test -p <crate-name>     # Tests pass FIRST
+cargo build -p <crate-name>    # Then build
+cargo build --workspace        # Confirm no workspace breakage
 ```
 
-Provide completion report with build/test results.
-
-**Before marking any task DONE:**
-- If new env vars were added → confirm Ansible template updated
-- If new endpoints were added → confirm frontend calls use timeout
-- If new HTTP clients were created → confirm timeout configured
-
----
-
-## Key Documents
-
-| Document | When to Read |
-|----------|--------------|
-| `docs/CLAUDE_CODE_INSTRUCTIONS.md` | Before ANY coding task |
-| `docs/TASK_TRACKER.md` | Check task status |
-| `docs/DATA_MODEL_v3.md` | Working on Neo4j models/queries |
-| `docs/RUST-PATTERNS.md` | Writing Rust code |
-| `AUDIT_REPORT_COLOSSUS_LEGAL.md` | Before fixing audit items |
-| `TRANSITION_DOC_2026-03-06_SESSION3_EOD.md` | Session continuity |
+Provide completion report: commit hash, test count, error/warning count.
 
 ---
 
 ## Rust Quick Reference
 
 ```rust
-// ✅ Required derives
+// ✅ Required derives for pipeline types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 
-// ✅ Enums with snake_case
+// ✅ sqlx enum mapping to TEXT column
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "text", rename_all = "snake_case")]
+
+// ✅ serde snake_case for enums
 #[serde(rename_all = "snake_case")]
 
-// ✅ Error handling
+// ✅ Error handling with thiserror
 #[derive(Debug, thiserror::Error)]
 pub enum MyError {
-    #[error("message: {0}")]
+    #[error("descriptive message: {0}")]
     Variant(String),
 }
 
-// ✅ Optional fields
-#[serde(skip_serializing_if = "Option::is_none")]
-pub field: Option<String>,
+// ✅ async trait (required for trait objects)
+#[async_trait::async_trait]
+pub trait MyTrait: Send + Sync + 'static {
+    async fn my_method(&self) -> Result<(), MyError>;
+}
 
-// ✅ HTTP client with timeout (MANDATORY)
-let client = reqwest::Client::builder()
-    .timeout(Duration::from_secs(30))
-    .connect_timeout(Duration::from_secs(5))
-    .build()?;
+// ✅ Arc for shared ownership across tasks
+pub field: Arc<dyn MyTrait>
 
-// ✅ Version from Cargo.toml
-version: env!("CARGO_PKG_VERSION"),
-
-// ❌ NEVER use in production handlers
-option.unwrap()           // Use ? or match
-"error".into()            // Use typed errors
-reqwest::Client::new()    // Use builder with timeout
-```
-
----
-
-## Commands
-
-```bash
-# Backend
-cd backend && cargo check    # Quick check
-cd backend && cargo test     # Run tests
-cd backend && cargo clippy   # Lint
-
-# Git
-git branch --show-current
-git status
-git diff --name-only
-
-# Module size check (before committing)
-find src -name "*.rs" -exec sh -c \
-  'lines=$(grep -v "^\s*$" "$1" | grep -v "^\s*//" | wc -l); \
-   if [ $lines -gt 300 ]; then echo "OVER: $lines $1"; fi' _ {} \;
+// ❌ NEVER
+option.unwrap()          // Use ? or match
+todo!()                  // Stubs use // Stub comment, not todo!()
+version bump             // Roman bumps versions only
 ```
 
 ---
 
 ## What NOT To Do
 
-❌ Write code before Pre-Coding Analysis approved
-❌ Modify files not in approved list
-❌ Add features not in task spec
-❌ Use `unwrap()` or `expect()` in production handlers
-❌ Create modules over 300 lines
-❌ Skip layers (must do L0 before L1)
-❌ Create HTTP clients without timeouts
-❌ Create fetch calls without AbortController
-❌ Hardcode secrets, passwords, or API keys
-❌ Use `:latest` tags on container images
-❌ Suppress build errors with `2>/dev/null || true`
-❌ Commit `.env` files or `.fastembed_cache/` to git
-❌ Add env vars to backend without updating Ansible template
-❌ Deploy without testing the full path (browser → Traefik → auth → backend → response)
+❌ Reference colossus-legal, colossus-ansible, or colossus-homelab paths
+❌ Write code before reading the files the task specifies
+❌ Bump version numbers in any Cargo.toml
+❌ Use unwrap() or expect() in library code
+❌ Skip writing tests — tests before cargo build, always
+❌ Leave stubs without a `// Stub — full implementation in P1-N` comment
+❌ Write a function without a doc comment
+❌ Use string literals where a constant should be used
+❌ Combine changes to multiple crates in one commit
 
 ---
 
 ## If Something Goes Wrong
 
-**STOP all edits.** Report the issue. Read-only operations only until resolved.
+**STOP all edits.** Report the exact compiler error or test failure.
+Read-only operations only until the issue is understood.
+Never fix a test to make it pass — fix the code.
 
 ---
 
-## Layer System
+## Commands
 
-| Layer | Description |
-|-------|-------------|
-| L0 | Skeleton — compiles, structure in place |
-| L1 | Real Data — happy path works |
-| L2 | Validation — error handling complete |
-| L3 | Integration — advanced features |
+```bash
+# Build and test a single crate
+cargo build -p colossus-pipeline
+cargo test -p colossus-pipeline
 
-Never skip layers.
+# Build entire workspace (run after every crate change)
+cargo build --workspace
+cargo test --workspace
+
+# Check current branch
+git branch --show-current   # Must return: main
+
+# Lint
+cargo clippy -p colossus-pipeline
+```
 
 ---
 
-## Architecture Quick Reference
+## Architecture Context
 
 ```
-Browser → Traefik (TLS) → Authentik ForwardAuth (frontend only)
-                        → Backend (API routes: no ForwardAuth, backend checks X-authentik-* headers)
+colossus-rs (this repo — library only)
+  └── colossus-pipeline    ← current work
+        Domain-agnostic job queue backed by PostgreSQL.
+        No knowledge of LLMs, legal documents, or any application domain.
+        colossus-legal and colossus-ai both use this crate unchanged.
 
-RAG Pipeline: Question → Router → QdrantRetriever → Neo4jExpander → LegalAssembler → RigSynthesizer → Answer
+colossus-legal (separate repo — do not touch)
+  └── Uses colossus-pipeline via workspace path dependency
+  └── Defines DocProcessing Task enum and Step implementations
+  └── Branch: feature/pipeline-v5
 
-Repos:
-  colossus-legal     — Application (Rust backend + React frontend)
-  colossus-rs        — Shared Rust libraries (colossus-auth, colossus-rag)
-  colossus-ansible   — Deployment automation (Ansible + Semaphore)
-  colossus-homelab   — Infrastructure docs, Butane configs, scripts
+colossus-ai (future repo — do not touch)
+  └── Will use colossus-pipeline unchanged
 ```
 
 ---
