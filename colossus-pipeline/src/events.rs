@@ -48,11 +48,7 @@ pub async fn log(
     message: &str,
     details: Option<&serde_json::Value>,
 ) -> Result<(), PipelineError> {
-    let message = if message.len() > 500 {
-        &message[..500]
-    } else {
-        message
-    };
+    let message = truncate_message(message);
 
     sqlx::query(
         "INSERT INTO pipeline_events (job_id, step, event_type, message, details)
@@ -68,3 +64,20 @@ pub async fn log(
 
     Ok(())
 }
+
+/// Truncate a message to 500 characters if it exceeds that length.
+///
+/// Used by [`log()`] to prevent runaway error messages from filling the
+/// pipeline_events table. Returns the original string unchanged if it is
+/// 500 characters or shorter.
+fn truncate_message(message: &str) -> &str {
+    if message.len() > 500 {
+        &message[..500]
+    } else {
+        message
+    }
+}
+
+#[cfg(test)]
+#[path = "events_tests.rs"]
+mod tests;
