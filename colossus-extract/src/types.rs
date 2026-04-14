@@ -7,9 +7,6 @@
 //! `#[serde(rename_all = "snake_case")]` ensures JSON keys match Rust
 //! naming conventions automatically.
 
-use std::collections::HashMap;
-
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A chunk of text split from a document.
@@ -26,65 +23,6 @@ pub struct TextChunk {
     pub text: String,
     /// Position of this chunk in the document (0-based).
     pub index: usize,
-}
-
-/// Result of extracting entities from a single text chunk.
-///
-/// This struct is used with rig's `prompt_typed<T>` for structured output.
-/// The `JsonSchema` derive lets rig generate a JSON schema that the LLM
-/// API uses for constrained decoding — guaranteeing the response matches
-/// this exact shape.
-///
-/// ## Rust Learning: Multiple derive macros
-///
-/// `JsonSchema` comes from the `schemars` crate. It generates a JSON Schema
-/// definition at compile time from the struct fields. This schema is sent
-/// to the LLM API, which constrains its output to match. No JSON parsing
-/// errors possible.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ChunkExtractionResult {
-    /// Entities extracted from this chunk.
-    pub nodes: Vec<ExtractedNode>,
-    /// Relationships between entities in this chunk.
-    pub relationships: Vec<ExtractedRel>,
-}
-
-/// A single entity extracted from a chunk by the LLM.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedNode {
-    /// Unique ID within this chunk (e.g., "0", "1", "party-001").
-    pub id: String,
-
-    /// Entity type label from the schema (e.g., "Person", "Allegation").
-    /// LLMs frequently return this as "type" or "entity_type" instead of "label".
-    #[serde(alias = "type", alias = "entity_type")]
-    pub label: String,
-
-    /// Properties extracted for this entity.
-    /// When the LLM flattens properties into the node object, we collect
-    /// them via the flatten + default approach below.
-    #[serde(default)]
-    pub properties: HashMap<String, serde_json::Value>,
-}
-
-/// A relationship between two entities within a chunk.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedRel {
-    /// Relationship type from the schema.
-    #[serde(rename = "type", alias = "relationship_type", alias = "rel_type")]
-    pub rel_type: String,
-
-    /// ID of the source node.
-    #[serde(alias = "from_entity", alias = "source")]
-    pub start_node_id: String,
-
-    /// ID of the target node.
-    #[serde(alias = "to_entity", alias = "target")]
-    pub end_node_id: String,
-
-    /// Properties on the relationship.
-    #[serde(default)]
-    pub properties: HashMap<String, serde_json::Value>,
 }
 
 /// Statistics from graph pruning — what was removed and why.

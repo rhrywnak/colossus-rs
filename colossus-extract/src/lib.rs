@@ -40,9 +40,8 @@ pub use schema::{
 };
 pub use resolver::NormalizedEntityResolver;
 pub use splitter::FixedSizeSplitter;
-pub use traits::{ChunkExtractor, EntityResolver, LlmProvider, TextSplitter};
+pub use traits::{EntityResolver, LlmProvider, TextSplitter};
 pub use types::{
-    ChunkExtractionResult, ExtractedEntity, ExtractedNode, ExtractedRel, ExtractedRelationship,
-    ExtractionResult, GroundingStatus, KnownEntity, PruningStats, ResolutionMethod,
-    ResolvedEntity, TextChunk,
+    ExtractedEntity, ExtractedRelationship, ExtractionResult, GroundingStatus, KnownEntity,
+    PruningStats, ResolutionMethod, ResolvedEntity, TextChunk,
 };

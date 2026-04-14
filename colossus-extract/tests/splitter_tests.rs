@@ -137,16 +137,3 @@ fn test_overlap_equals_chunk_size_panics() {
     FixedSizeSplitter::with_config(100, 100);
 }
 
-#[test]
-fn test_chunk_extraction_result_json_schema() {
-    // Verify the JsonSchema derive works and produces valid schema
-    use colossus_extract::ChunkExtractionResult;
-    let schema = schemars::schema_for!(ChunkExtractionResult);
-    let json = serde_json::to_string_pretty(&schema).unwrap();
-
-    // Should contain our field names
-    assert!(json.contains("nodes"), "Schema should contain 'nodes'");
-    assert!(json.contains("relationships"), "Schema should contain 'relationships'");
-    assert!(json.contains("label"), "Schema should contain 'label'");
-    assert!(json.contains("start_node_id"), "Schema should contain 'start_node_id'");
-}
