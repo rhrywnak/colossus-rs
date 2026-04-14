@@ -16,6 +16,7 @@
 pub mod config;
 pub mod executor;
 pub mod fetcher;
+pub mod fetcher_recovery;
 pub mod heartbeat;
 pub mod recovery;
 pub mod retry;

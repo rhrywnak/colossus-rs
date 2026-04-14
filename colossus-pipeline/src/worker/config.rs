@@ -18,6 +18,35 @@
 
 use uuid::Uuid;
 
+/// Default maximum concurrent jobs per worker instance.
+pub(crate) const DEFAULT_MAX_CONCURRENT: usize = 4;
+
+/// Default poll interval when no LISTEN notification arrives.
+pub(crate) const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
+
+/// Default graceful shutdown drain timeout.
+pub(crate) const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 300;
+
+/// Default heartbeat update interval. Must be less than DEFAULT_ZOMBIE_THRESHOLD_SECS / 2.
+pub(crate) const DEFAULT_HEARTBEAT_INTERVAL_SECS: u64 = 30;
+
+/// Default zombie detection threshold. Jobs with stale heartbeat older than
+/// this are considered crashed and reset for retry.
+pub(crate) const DEFAULT_ZOMBIE_THRESHOLD_SECS: u64 = 120;
+
+/// Default interval between recovery scans for zombies and timed-out jobs.
+pub(crate) const DEFAULT_RECOVERY_INTERVAL_SECS: u64 = 60;
+
+/// Default wakeup delay applied to recovered jobs before they re-enter the queue.
+pub(crate) const DEFAULT_RECOVERY_WAKEUP_SECS: u64 = 5;
+
+/// Default cancel signal poll interval inside the executor.
+pub(crate) const DEFAULT_CANCEL_POLL_INTERVAL_SECS: u64 = 5;
+
+/// Default PostgreSQL LISTEN/NOTIFY channel name.
+/// Must match the channel name in migrations/001_create_pipeline_jobs.sql trigger.
+pub(crate) const DEFAULT_NOTIFY_CHANNEL: &str = "pipeline_jobs_changed";
+
 /// All operational parameters for the pipeline worker.
 ///
 /// Constructed once at application startup via WorkerConfig::from_env().
@@ -79,16 +108,16 @@ impl WorkerConfig {
     /// because UUID v4 is randomly generated each call.
     pub fn from_env() -> Self {
         Self {
-            max_concurrent: env_usize("PIPELINE_MAX_CONCURRENT", 4),
-            poll_interval_secs: env_u64("PIPELINE_POLL_INTERVAL_SECS", 2),
-            drain_timeout_secs: env_u64("PIPELINE_DRAIN_TIMEOUT_SECS", 300),
-            heartbeat_interval_secs: env_u64("PIPELINE_HEARTBEAT_INTERVAL_SECS", 30),
-            zombie_threshold_secs: env_u64("PIPELINE_ZOMBIE_THRESHOLD_SECS", 120),
-            recovery_interval_secs: env_u64("PIPELINE_RECOVERY_INTERVAL_SECS", 60),
-            recovery_wakeup_secs: env_u64("PIPELINE_RECOVERY_WAKEUP_SECS", 5),
-            cancel_poll_interval_secs: env_u64("PIPELINE_CANCEL_POLL_INTERVAL_SECS", 5),
+            max_concurrent: env_usize("PIPELINE_MAX_CONCURRENT", DEFAULT_MAX_CONCURRENT),
+            poll_interval_secs: env_u64("PIPELINE_POLL_INTERVAL_SECS", DEFAULT_POLL_INTERVAL_SECS),
+            drain_timeout_secs: env_u64("PIPELINE_DRAIN_TIMEOUT_SECS", DEFAULT_DRAIN_TIMEOUT_SECS),
+            heartbeat_interval_secs: env_u64("PIPELINE_HEARTBEAT_INTERVAL_SECS", DEFAULT_HEARTBEAT_INTERVAL_SECS),
+            zombie_threshold_secs: env_u64("PIPELINE_ZOMBIE_THRESHOLD_SECS", DEFAULT_ZOMBIE_THRESHOLD_SECS),
+            recovery_interval_secs: env_u64("PIPELINE_RECOVERY_INTERVAL_SECS", DEFAULT_RECOVERY_INTERVAL_SECS),
+            recovery_wakeup_secs: env_u64("PIPELINE_RECOVERY_WAKEUP_SECS", DEFAULT_RECOVERY_WAKEUP_SECS),
+            cancel_poll_interval_secs: env_u64("PIPELINE_CANCEL_POLL_INTERVAL_SECS", DEFAULT_CANCEL_POLL_INTERVAL_SECS),
             notify_channel: std::env::var("PIPELINE_NOTIFY_CHANNEL")
-                .unwrap_or_else(|_| "pipeline_jobs_changed".to_string()),
+                .unwrap_or_else(|_| DEFAULT_NOTIFY_CHANNEL.to_string()),
             worker_id: std::env::var("PIPELINE_WORKER_ID")
                 .unwrap_or_else(|_| Uuid::new_v4().to_string()),
         }
