@@ -1,0 +1,23 @@
+[package]
+name = "colossus-pipeline"
+version = "0.1.0"
+edition = "2021"
+description = "Domain-agnostic async job pipeline framework for Colossus applications. Zero knowledge of LLMs, embeddings, or document processing."
+
+[dependencies]
+async-trait  = "0.1"
+chrono       = { version = "0.4", features = ["serde"] }
+futures      = "0.3"
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+thiserror    = "2"
+tokio        = { version = "1", features = ["macros", "sync", "time", "rt-multi-thread"] }
+tracing      = { workspace = true }
+uuid         = { version = "1", features = ["v4", "v7", "serde"] }
+
+[dependencies.sqlx]
+version  = "0.8"
+features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
