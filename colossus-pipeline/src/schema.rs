@@ -17,6 +17,7 @@ use uuid::Uuid;
 /// Job lifecycle status. Managed exclusively by the Worker.
 /// Application code never sets this directly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum JobStatus {
     /// Waiting to be claimed by a worker.
@@ -33,6 +34,7 @@ pub enum JobStatus {
 
 /// Control signals set by external actors (API handlers), read by the Worker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "text", rename_all = "snake_case")]
 pub enum JobControl {
     /// No pending control signal. Normal execution continues.
@@ -83,6 +85,9 @@ pub struct JobRow {
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
 }
+
+#[cfg(test)]
+mod tests;
 
 /// A complete row from the pipeline_events table.
 /// Every state transition and notable occurrence is recorded here.
