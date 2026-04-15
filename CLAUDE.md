@@ -1,217 +1,118 @@
 # CLAUDE.md — colossus-rs
 
-> **Read this FIRST before any task.**
+> **Read this file first. Then read `COLOSSUS-CC-STANDARDS.md` immediately after.**
+> COLOSSUS-CC-STANDARDS.md contains the pre-coding analysis template,
+> STOP gate rules, forensic mode, completion report format, and all
+> generic coding standards. Both files must be read before any task begins.
 
-## Project
+---
+
+## What this repo is
 
 **colossus-rs** — Shared Rust library workspace for Colossus applications.
-This is a library workspace. It has no binary, no HTTP server, no frontend,
-no Ansible deployment, and no containers. It is consumed as a git dependency
-by colossus-legal and colossus-ai.
+Library crates only. No binary, no HTTP server, no frontend, no containers.
+Consumed as a git dependency by colossus-legal and colossus-ai.
 
-### Crates in this workspace
+### Workspace crates
 
 | Crate | Description |
 |-------|-------------|
 | colossus-auth | Authentik + Axum authentication integration |
-| colossus-extract | Document extraction types, traits, providers, schema loader |
+| colossus-extract | Extraction types, traits, LLM/embedding providers, schema loader |
 | colossus-rag | RAG pipeline (retriever, expander, synthesizer, decomposer) |
 | colossus-pdf | PDF text extraction |
 | colossus-graph | Neo4j query functions (domain-agnostic) |
-| colossus-pipeline | Async job pipeline framework (domain-agnostic) ← ACTIVE PHASE |
+| colossus-pipeline | Async job pipeline framework (domain-agnostic) |
 
-### Current phase
-
-**Phase PV — colossus-pipeline crate build (P1-1 through P1-15)**
-Design doc: COLOSSUS_PIPELINE_DESIGN_v5_2.md
-Task tracker: COLOSSUS_PIPELINE_TASK_TRACKER_v1_1.md
-Branch: main
+Current phase, active task, and progress are in the session transition
+document — not here. Read the transition doc for that context.
+Branch for this repo is always `main`.
 
 ---
 
-## Human Context
+## Colossus-rs specific rules
 
-**Developer:** Roman — 45 years IT, CS degree, retired, learning Rust.
-- Explain every Rust pattern you use with a `## Rust Learning:` doc comment
-- Reference patterns in doc comments, not in chat
-- Clear explanations over terse code
-- Working code over perfect code
+These rules apply permanently to this repo regardless of phase.
+They are IN ADDITION to everything in COLOSSUS-CC-STANDARDS.md.
 
----
+### Reusability is non-negotiable
+Before writing any code for colossus-pipeline or colossus-extract, ask:
+"Could colossus-ai use this with zero code changes?"
+If the answer is NO — the design is wrong. Stop and flag it.
+Domain-specific config goes in YAML/env vars, never in Rust code.
 
-## The Golden Rules
+### No application domain knowledge in this repo
+These crates must have zero knowledge of:
+- Legal documents, cases, or entities
+- Any specific LLM provider by name in framework code
+- colossus-legal's AppContext, AppState, or any of its types
+- Any specific database schema from colossus-legal
 
-```
-1. cargo check after EVERY change
-2. Never accumulate more than 10 errors
-3. No module over 300 lines (code lines, excluding doc comments)
-4. No function over 50 lines
-5. Tests MUST pass before cargo build — a clean compile is NOT verification
-6. Never bump version numbers — Roman does that
-7. Every module, struct, trait, and public function MUST have a doc comment
-   explaining what it does AND why it exists in this system
-8. No magic strings or numbers — use constants
-9. No .unwrap() or .expect() in library code — use ? or explicit error handling
-10. Single repo only — never reference files in colossus-legal or any other repo
-```
+### LlmProvider pattern
+All LLM calls in the framework go through the LlmProvider trait.
+Never call rig::providers::anthropic directly in framework code.
+Provider selection happens via env vars, not compile-time types.
 
----
+### Enum SQL binding — never hardcode status strings
+All SQL status and control values bind via enum as_str() methods.
+Never write 'ready', 'running', 'failed' etc. as SQL string literals.
+JobStatus::as_str() and JobControl::as_str() are the single source of truth.
+A typo in a literal is a silent runtime failure.
+A typo in an enum variant is a compile error.
 
-## Doc Comment Requirement (MANDATORY)
+### Branch is always main
+colossus-rs always works on main. No feature branches.
+New crates are added directly to main.
 
-Every file must have a `//!` module doc comment at the top:
+### No rand crate for jitter
+Retry jitter uses nanosecond-based deterministic seed.
+Do not add the rand crate.
 
-```rust
-//! colossus-pipeline/src/worker/heartbeat.rs
-//!
-//! Heartbeat task for pipeline job liveness tracking.
-//!
-//! One-sentence description of what this module does.
-//! One-sentence description of WHY it exists (what problem it solves).
-//!
-//! ## Rust Learning: [pattern name]
-//!
-//! Explanation of the key Rust pattern used in this module.
-```
-
-Every public struct, enum, trait, and function must have a `///` doc comment:
-
-```rust
-/// Short description of what this is.
-///
-/// Longer explanation of why it exists and how it fits in the system.
-/// Include Rust Learning notes when a non-obvious pattern is used.
-pub struct MyStruct { ... }
-```
+### Worker step contracts
+Steps must never call tokio::spawn internally.
+Steps are called by the Worker which handles all concurrency.
 
 ---
 
-## Pre-Coding Process
-
-For every task, report these before writing any code:
-
-```
-### Files to read (report contents before modifying)
-### Files to modify (exact paths)
-### Files to create (exact paths)
-### Tests to write (names and what they verify)
-### Potential issues
-```
-
-Then proceed — no explicit "Proceed" gate required for colossus-rs tasks
-unless the task instruction specifies a STOP gate.
-
----
-
-## Post-Coding Requirements
+## Commands for this repo
 
 ```bash
-cargo test -p <crate-name>     # Tests pass FIRST
-cargo build -p <crate-name>    # Then build
-cargo build --workspace        # Confirm no workspace breakage
-```
+# Branch verification (must be main)
+git branch --show-current
+git status
 
-Provide completion report: commit hash, test count, error/warning count.
-
----
-
-## Rust Quick Reference
-
-```rust
-// ✅ Required derives for pipeline types
-#[derive(Debug, Clone, Serialize, Deserialize)]
-
-// ✅ sqlx enum mapping to TEXT column
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "text", rename_all = "snake_case")]
-
-// ✅ serde snake_case for enums
-#[serde(rename_all = "snake_case")]
-
-// ✅ Error handling with thiserror
-#[derive(Debug, thiserror::Error)]
-pub enum MyError {
-    #[error("descriptive message: {0}")]
-    Variant(String),
-}
-
-// ✅ async trait (required for trait objects)
-#[async_trait::async_trait]
-pub trait MyTrait: Send + Sync + 'static {
-    async fn my_method(&self) -> Result<(), MyError>;
-}
-
-// ✅ Arc for shared ownership across tasks
-pub field: Arc<dyn MyTrait>
-
-// ❌ NEVER
-option.unwrap()          // Use ? or match
-todo!()                  // Stubs use // Stub comment, not todo!()
-version bump             // Roman bumps versions only
-```
-
----
-
-## What NOT To Do
-
-❌ Reference colossus-legal, colossus-ansible, or colossus-homelab paths
-❌ Write code before reading the files the task specifies
-❌ Bump version numbers in any Cargo.toml
-❌ Use unwrap() or expect() in library code
-❌ Skip writing tests — tests before cargo build, always
-❌ Leave stubs without a `// Stub — full implementation in P1-N` comment
-❌ Write a function without a doc comment
-❌ Use string literals where a constant should be used
-❌ Combine changes to multiple crates in one commit
-
----
-
-## If Something Goes Wrong
-
-**STOP all edits.** Report the exact compiler error or test failure.
-Read-only operations only until the issue is understood.
-Never fix a test to make it pass — fix the code.
-
----
-
-## Commands
-
-```bash
 # Build and test a single crate
 cargo build -p colossus-pipeline
-cargo test -p colossus-pipeline
+cargo test -p colossus-pipeline -- --test-threads=1
 
 # Build entire workspace (run after every crate change)
 cargo build --workspace
-cargo test --workspace
-
-# Check current branch
-git branch --show-current   # Must return: main
+cargo test --workspace -- --test-threads=1
 
 # Lint
-cargo clippy -p colossus-pipeline
+cargo clippy -p colossus-pipeline -- -D warnings
+
+# Module size check (code lines, excluding comments)
+find colossus-pipeline/src -name "*.rs" -exec sh -c \
+  'lines=$(grep -v "^[[:space:]]*//\|^[[:space:]]*\*\|^[[:space:]]*$" "$1" | wc -l); \
+   if [ $lines -gt 300 ]; then echo "OVER 300: $lines $1"; fi' _ {} \;
 ```
 
 ---
 
-## Architecture Context
+## What NOT to do in this repo
 
-```
-colossus-rs (this repo — library only)
-  └── colossus-pipeline    ← current work
-        Domain-agnostic job queue backed by PostgreSQL.
-        No knowledge of LLMs, legal documents, or any application domain.
-        colossus-legal and colossus-ai both use this crate unchanged.
-
-colossus-legal (separate repo — do not touch)
-  └── Uses colossus-pipeline via workspace path dependency
-  └── Defines DocProcessing Task enum and Step implementations
-  └── Branch: feature/pipeline-v5
-
-colossus-ai (future repo — do not touch)
-  └── Will use colossus-pipeline unchanged
-```
+❌ Add colossus-legal specific types or domain knowledge to any crate
+❌ Reference colossus-legal, colossus-ansible, or colossus-homelab paths
+❌ Hardcode SQL status strings — use JobStatus::as_str() and JobControl::as_str()
+❌ Add the rand crate for jitter — use nanosecond-based seed
+❌ Call tokio::spawn inside Step implementations
+❌ Create feature branches — work on main
+❌ Bump version numbers — Roman does that
+❌ Make a crate dependent on another colossus-rs crate unless truly necessary
 
 ---
 
-# End of CLAUDE.md
+*This file contains permanent rules only.*
+*Current phase, active task, and progress: read the session transition document.*
+*Full coding standards, STOP gate, pre-coding template: read COLOSSUS-CC-STANDARDS.md.*
