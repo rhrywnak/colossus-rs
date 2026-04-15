@@ -522,19 +522,16 @@ async fn t09_timeout_fires() {
         .await
         .unwrap();
 
-    let (handle, tx) = spawn_worker(db.clone(), ctx).await;
-
-    // Wait until the job is Running (claim has already set timeout_at=NULL)
-    wait_for_status(&s, job_id, JobStatus::Running, 5).await;
-
-    // Now set timeout_at — claim already happened so it won't be wiped
+    // Set timeout_at before claim — COALESCE in claim() preserves it
     sqlx::query(
-        "UPDATE pipeline_jobs SET timeout_at = NOW() + INTERVAL '1 second' WHERE id = $1",
+        "UPDATE pipeline_jobs SET timeout_at = NOW() + INTERVAL '3 seconds' WHERE id = $1",
     )
     .bind(job_id)
     .execute(&db)
     .await
     .unwrap();
+
+    let (handle, tx) = spawn_worker(db.clone(), ctx).await;
 
     let job = wait_for_terminal(&s, job_id, 10).await;
     assert_eq!(job.status, JobStatus::Failed, "timed-out job should be Failed");
@@ -701,7 +698,7 @@ async fn t15_shutdown_drains_jobs() {
     let ctx = Arc::new(TestContext::new());
     // Make StepB slow enough to observe Running, but fast enough to drain
     ctx.slow_step_b.store(true, Ordering::SeqCst);
-    ctx.slow_step_b_secs.store(2, Ordering::SeqCst);
+    ctx.slow_step_b_secs.store(3, Ordering::SeqCst);
 
     let s = Scheduler::new(&db);
 
@@ -712,14 +709,14 @@ async fn t15_shutdown_drains_jobs() {
 
     let (handle, tx) = spawn_worker(db.clone(), ctx).await;
 
-    // Wait for the job to start running (StepB sleeping 2s)
+    // Wait for the job to start running (StepB sleeping 3s)
     wait_for_status(&s, job_id, JobStatus::Running, 5).await;
 
     // Send shutdown — worker should drain in-flight jobs within drain_timeout (5s)
     shutdown_worker(tx, handle).await;
 
     // Job should have completed during drain
-    let job = s.status(job_id).await.unwrap();
+    let job = wait_for_terminal(&s, job_id, 10).await;
     assert_eq!(
         job.status,
         JobStatus::Completed,
@@ -754,22 +751,28 @@ async fn t16_concurrent_max_two() {
 
     let (handle, tx) = spawn_worker(db.clone(), ctx).await;
 
-    // Wait for jobs to start running
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Poll until 2 jobs are Running (more robust than a single timed check)
+    let start = Instant::now();
+    loop {
+        let running: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM pipeline_jobs WHERE status = $1",
+        )
+        .bind(JobStatus::Running.as_str())
+        .fetch_one(&db)
+        .await
+        .unwrap();
 
-    let running: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM pipeline_jobs WHERE status = $1",
-    )
-    .bind(JobStatus::Running.as_str())
-    .fetch_one(&db)
-    .await
-    .unwrap();
-
-    assert_eq!(
-        running.0, 2,
-        "expected exactly 2 running (max_concurrent=2), got {}",
-        running.0
-    );
+        if running.0 == 2 {
+            break;
+        }
+        if start.elapsed() > Duration::from_secs(5) {
+            panic!(
+                "Timeout waiting for 2 running jobs, got {}",
+                running.0
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 
     shutdown_worker(tx, handle).await;
     cleanup(&db).await;

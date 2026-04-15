@@ -69,7 +69,7 @@ pub async fn claim(
             step_started_at   = NOW(),
             step_completed_at = NULL,
             last_heartbeat_at = NOW(),
-            timeout_at        = $3,
+            timeout_at        = COALESCE($3, timeout_at),
             updated_at        = NOW()
         WHERE id = (
             SELECT id FROM pipeline_jobs
