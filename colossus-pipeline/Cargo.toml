@@ -20,4 +20,12 @@ version  = "0.8"
 features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "macros"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["full", "test-util"] }
+async-trait = "0.1"
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+tokio       = { version = "1", features = ["full", "test-util"] }
+uuid        = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies.sqlx]
+version  = "0.8"
+features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"]
