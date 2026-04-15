@@ -140,6 +140,47 @@ pub async fn advance(
     Ok(())
 }
 
+/// Advance a job to its next step with a delayed wakeup.
+///
+/// Identical to [`advance`] except `wakeup_at` is set to `NOW() + delay_secs`
+/// instead of `NOW()`. Used by `StepResult::Delay` when a step requests a
+/// backoff before re-execution (e.g., rate-limit retry detected by the step).
+pub async fn advance_with_delay(
+    db: &PgPool,
+    job_id: Uuid,
+    next_step_data: &serde_json::Value,
+    next_step_name: &str,
+    step_result: &serde_json::Value,
+    delay_secs: i64,
+) -> Result<(), PipelineError> {
+    sqlx::query(
+        r#"
+        UPDATE pipeline_jobs
+        SET
+            status            = $1,
+            current_step      = $2,
+            step_data         = $3,
+            result            = result || $4,
+            tried             = 0,
+            error             = NULL,
+            step_completed_at = NOW(),
+            wakeup_at         = NOW() + make_interval(secs => $5),
+            updated_at        = NOW()
+        WHERE id = $6
+        "#,
+    )
+    .bind(JobStatus::Ready.as_str())
+    .bind(next_step_name)
+    .bind(next_step_data)
+    .bind(step_result)
+    .bind(delay_secs as f64)
+    .bind(job_id)
+    .execute(db)
+    .await?;
+
+    Ok(())
+}
+
 /// Mark a job as fully completed.
 ///
 /// Terminal state — no further transitions except deletion.
@@ -200,37 +241,6 @@ pub async fn park(
     .await?;
 
     Ok(())
-}
-
-/// Request cancellation of a running job.
-///
-/// Sets control=cancel_requested. The cancel_watcher inside the executor
-/// polls this column and triggers the CancellationToken when it sees this value.
-/// Returns true if the job was in a cancellable state, false if not found
-/// or already in a terminal state.
-pub async fn request_cancel(
-    db: &PgPool,
-    job_id: Uuid,
-) -> Result<bool, PipelineError> {
-    let result = sqlx::query(
-        r#"
-        UPDATE pipeline_jobs
-        SET
-            control    = $1,
-            updated_at = NOW()
-        WHERE id = $2
-          AND status NOT IN ($3, $4, $5)
-        "#,
-    )
-    .bind(JobControl::CancelRequested.as_str())
-    .bind(job_id)
-    .bind(JobStatus::Completed.as_str())
-    .bind(JobStatus::Failed.as_str())
-    .bind(JobStatus::Cancelled.as_str())
-    .execute(db)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
 }
 
 /// Mark a job as cancelled after the cancellation was processed.
@@ -321,85 +331,6 @@ pub async fn fail_exhausted(
     .bind(JobStatus::Failed.as_str())
     .bind(error)
     .bind(job_id)
-    .execute(db)
-    .await?;
-
-    Ok(())
-}
-
-/// Resume a parked or failed job.
-///
-/// Clears the control signal and resets status to ready so the worker
-/// can re-claim it. Used after human review completes or after manual
-/// retry of a failed job.
-pub async fn resume(
-    db: &PgPool,
-    job_id: Uuid,
-) -> Result<(), PipelineError> {
-    let result = sqlx::query(
-        r#"
-        UPDATE pipeline_jobs
-        SET
-            status     = $1,
-            control    = $2,
-            error      = NULL,
-            wakeup_at  = NOW(),
-            updated_at = NOW()
-        WHERE id = $3
-          AND (
-              (status = $4)
-              OR (status = $5 AND control = $6)
-          )
-        "#,
-    )
-    .bind(JobStatus::Ready.as_str())
-    .bind(JobControl::None.as_str())
-    .bind(job_id)
-    .bind(JobStatus::Failed.as_str())
-    .bind(JobStatus::Ready.as_str())
-    .bind(JobControl::WaitingForInput.as_str())
-    .execute(db)
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(PipelineError::JobNotResumable(job_id));
-    }
-
-    Ok(())
-}
-
-/// Advance a parked job to its next step after external input is provided.
-///
-/// Used when a WaitForInput step has received the input it was waiting for.
-/// Clears waiting_for_input control, sets next step data.
-pub async fn advance_from_park(
-    db: &PgPool,
-    job_id: Uuid,
-    next_step_data: &serde_json::Value,
-    next_step_name: &str,
-) -> Result<(), PipelineError> {
-    sqlx::query(
-        r#"
-        UPDATE pipeline_jobs
-        SET
-            status       = $1,
-            control      = $2,
-            current_step = $3,
-            step_data    = $4,
-            wakeup_at    = NOW(),
-            updated_at   = NOW()
-        WHERE id = $5
-          AND status = $6
-          AND control = $7
-        "#,
-    )
-    .bind(JobStatus::Ready.as_str())
-    .bind(JobControl::None.as_str())
-    .bind(next_step_name)
-    .bind(next_step_data)
-    .bind(job_id)
-    .bind(JobStatus::Ready.as_str())
-    .bind(JobControl::WaitingForInput.as_str())
     .execute(db)
     .await?;
 

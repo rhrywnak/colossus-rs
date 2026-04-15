@@ -25,7 +25,7 @@ use crate::error::PipelineError;
 use crate::events;
 use crate::schema::{JobControl, JobRow, JobStatus, PipelineEvent};
 use crate::task::Task;
-use crate::worker::fetcher;
+use crate::worker::fetcher_api;
 
 /// Pipeline version written to every new job row.
 /// Increment when the step graph or step_data schema changes in a
@@ -180,7 +180,7 @@ impl<'a> Scheduler<'a> {
             _ => {}
         }
 
-        fetcher::request_cancel(self.db, job_id).await?;
+        fetcher_api::request_cancel(self.db, job_id).await?;
 
         events::log(
             self.db,
@@ -197,13 +197,13 @@ impl<'a> Scheduler<'a> {
 
     /// Resume a failed or parked job.
     ///
-    /// Delegates to `fetcher::resume` which accepts both Failed jobs and
+    /// Delegates to `fetcher_api::resume` which accepts both Failed jobs and
     /// Ready+WaitingForInput jobs. Returns `JobNotResumable` if the job
     /// is not in a resumable state.
     pub async fn resume(&self, job_id: Uuid) -> Result<(), PipelineError> {
-        // fetcher::resume handles the precondition check and returns
+        // fetcher_api::resume handles the precondition check and returns
         // JobNotResumable if rows_affected == 0.
-        fetcher::resume(self.db, job_id).await?;
+        fetcher_api::resume(self.db, job_id).await?;
 
         let job = self.status(job_id).await?;
         events::log(
