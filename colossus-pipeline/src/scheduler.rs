@@ -25,6 +25,7 @@ use crate::error::PipelineError;
 use crate::events;
 use crate::schema::{JobControl, JobRow, JobStatus, PipelineEvent};
 use crate::task::Task;
+use crate::worker::fetcher;
 use crate::worker::fetcher_api;
 
 /// Pipeline version written to every new job row.
@@ -165,11 +166,13 @@ impl<'a> Scheduler<'a> {
         Ok(row)
     }
 
-    /// Request cancellation of a job.
+    /// Cancel a job.
     ///
-    /// Sets `control = cancel_requested` so the executor's cancel_watcher
-    /// detects it on its next poll. Returns `JobNotCancellable` if the job
-    /// is already in a terminal state.
+    /// If the job is Ready (not yet claimed by a worker), cancels it
+    /// immediately by setting status=Failed. If the job is Running,
+    /// sets `control = cancel_requested` so the executor's cancel_watcher
+    /// detects it on its next poll. Returns `JobNotCancellable` if the
+    /// job is already in a terminal state.
     pub async fn cancel(&self, job_id: Uuid) -> Result<(), PipelineError> {
         let job = self.status(job_id).await?;
 
@@ -177,20 +180,33 @@ impl<'a> Scheduler<'a> {
             JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled => {
                 return Err(PipelineError::JobNotCancellable(job_id));
             }
-            _ => {}
+            JobStatus::Ready => {
+                // Ready jobs have no cancel_watcher — cancel directly.
+                fetcher::cancel(self.db, job_id).await?;
+                events::log(
+                    self.db,
+                    job_id,
+                    &job.current_step,
+                    events::EVT_CANCELLED,
+                    "Job cancelled (was not yet running)",
+                    None,
+                )
+                .await?;
+            }
+            JobStatus::Running => {
+                // Running jobs are cancelled via the cancel_watcher.
+                fetcher_api::request_cancel(self.db, job_id).await?;
+                events::log(
+                    self.db,
+                    job_id,
+                    &job.current_step,
+                    events::EVT_CANCEL_REQUESTED,
+                    "Cancellation requested",
+                    None,
+                )
+                .await?;
+            }
         }
-
-        fetcher_api::request_cancel(self.db, job_id).await?;
-
-        events::log(
-            self.db,
-            job_id,
-            &job.current_step,
-            events::EVT_CANCEL_REQUESTED,
-            "Cancellation requested",
-            None,
-        )
-        .await?;
 
         Ok(())
     }

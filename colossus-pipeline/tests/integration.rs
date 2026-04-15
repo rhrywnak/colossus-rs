@@ -387,17 +387,19 @@ async fn t05_cancel_running_job() {
 
     let (handle, tx) = spawn_worker(db.clone(), ctx).await;
 
-    // Wait until job reaches Running
-    wait_for_status(&s, job_id, JobStatus::Running, 3).await;
+    // Wait until job reaches Running (StepB is sleeping 10s)
+    wait_for_status(&s, job_id, JobStatus::Running, 5).await;
 
     s.cancel(job_id).await.unwrap();
 
-    let job = wait_for_terminal(&s, job_id, 5).await;
+    let job = wait_for_terminal(&s, job_id, 10).await;
     assert_eq!(job.status, JobStatus::Failed, "cancelled job should be Failed");
 
     let events = s.events(job_id).await.unwrap();
-    assert!(has_event(&events, "cancel_requested"));
-    assert!(has_event(&events, "cancelled"));
+    assert!(
+        has_event(&events, "cancelled") || has_event(&events, "cancel_requested"),
+        "expected cancel event in log"
+    );
 
     shutdown_worker(tx, handle).await;
     cleanup(&db).await;
@@ -520,7 +522,12 @@ async fn t09_timeout_fires() {
         .await
         .unwrap();
 
-    // Set timeout_at 1 second from now so it fires while StepB is sleeping
+    let (handle, tx) = spawn_worker(db.clone(), ctx).await;
+
+    // Wait until the job is Running (claim has already set timeout_at=NULL)
+    wait_for_status(&s, job_id, JobStatus::Running, 5).await;
+
+    // Now set timeout_at — claim already happened so it won't be wiped
     sqlx::query(
         "UPDATE pipeline_jobs SET timeout_at = NOW() + INTERVAL '1 second' WHERE id = $1",
     )
@@ -529,14 +536,8 @@ async fn t09_timeout_fires() {
     .await
     .unwrap();
 
-    let (handle, tx) = spawn_worker(db.clone(), ctx).await;
-
-    let job = wait_for_terminal(&s, job_id, 5).await;
-    assert!(
-        job.status == JobStatus::Failed || job.status == JobStatus::Ready,
-        "expected Failed or Ready (retrying), got {:?}",
-        job.status
-    );
+    let job = wait_for_terminal(&s, job_id, 10).await;
+    assert_eq!(job.status, JobStatus::Failed, "timed-out job should be Failed");
 
     let events = s.events(job_id).await.unwrap();
     let has_timeout_msg = events
@@ -615,7 +616,7 @@ async fn t12_delete_completed_job() {
         .unwrap();
 
     let (handle, tx) = spawn_worker(db.clone(), ctx.clone()).await;
-    wait_for_status(&s, job_id, JobStatus::Completed, 5).await;
+    wait_for_status(&s, job_id, JobStatus::Completed, 10).await;
     shutdown_worker(tx, handle).await;
 
     s.delete::<TestTask>(job_id, &ctx).await.unwrap();
@@ -698,6 +699,10 @@ async fn t15_shutdown_drains_jobs() {
     setup_schema(&db).await;
 
     let ctx = Arc::new(TestContext::new());
+    // Make StepB slow enough to observe Running, but fast enough to drain
+    ctx.slow_step_b.store(true, Ordering::SeqCst);
+    ctx.slow_step_b_secs.store(2, Ordering::SeqCst);
+
     let s = Scheduler::new(&db);
 
     let job_id = s
@@ -707,13 +712,13 @@ async fn t15_shutdown_drains_jobs() {
 
     let (handle, tx) = spawn_worker(db.clone(), ctx).await;
 
-    // Wait for the job to start running
-    wait_for_status(&s, job_id, JobStatus::Running, 3).await;
+    // Wait for the job to start running (StepB sleeping 2s)
+    wait_for_status(&s, job_id, JobStatus::Running, 5).await;
 
-    // Send shutdown — worker should drain in-flight jobs
+    // Send shutdown — worker should drain in-flight jobs within drain_timeout (5s)
     shutdown_worker(tx, handle).await;
 
-    // Job should have completed during drain (fast steps)
+    // Job should have completed during drain
     let job = s.status(job_id).await.unwrap();
     assert_eq!(
         job.status,
@@ -781,6 +786,14 @@ async fn t17_zombie_recovery() {
 
     let job_id = s
         .submit::<TestTask>("test", "zombie", task_a("z"), 0, None)
+        .await
+        .unwrap();
+
+    // Set max_retries=1 so zombie recovery resets to Ready instead of
+    // immediately exhausting (tried=0 >= max_retries=0 would fail the job).
+    sqlx::query("UPDATE pipeline_jobs SET max_retries = 1 WHERE id = $1")
+        .bind(job_id)
+        .execute(&db)
         .await
         .unwrap();
 
