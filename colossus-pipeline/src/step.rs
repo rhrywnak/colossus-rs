@@ -39,6 +39,7 @@ use crate::task::Task;
 /// What happens after a step finishes executing.
 ///
 /// The Worker reads this value and drives the FSM transition accordingly.
+#[derive(Debug)]
 pub enum StepResult<T: Task> {
     /// Advance to the next step. T is the next Task variant to execute.
     Next(T),
@@ -57,6 +58,8 @@ pub enum StepResult<T: Task> {
 
 /// Internal result returned by executor::execute_step.
 /// Not part of the public API — the Worker uses this to decide next action.
+#[derive(Debug)]
+#[allow(dead_code)] // Used by Worker main loop in P1-14
 pub(crate) enum ExecutionResult<T: Task> {
     /// Step completed. Carry the StepResult and any accumulated result JSONB.
     Success(StepResult<T>, serde_json::Value),
