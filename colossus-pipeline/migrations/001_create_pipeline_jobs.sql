@@ -50,6 +50,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_pipeline_jobs_unique_active
     ON pipeline_jobs (job_type, job_key)
     WHERE status NOT IN ('completed', 'cancelled');
 
+-- NOTE: The channel name 'pipeline_jobs_changed' must match
+-- DEFAULT_NOTIFY_CHANNEL in worker/config.rs.
+-- It can be overridden at runtime via PIPELINE_NOTIFY_CHANNEL env var.
 CREATE OR REPLACE FUNCTION pipeline_jobs_notify() RETURNS trigger AS $$
 BEGIN
     PERFORM pg_notify('pipeline_jobs_changed', NEW.id::text);

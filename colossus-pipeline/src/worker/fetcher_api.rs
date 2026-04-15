@@ -95,7 +95,7 @@ pub async fn advance_from_park(
     next_step_data: &serde_json::Value,
     next_step_name: &str,
 ) -> Result<(), PipelineError> {
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE pipeline_jobs
         SET
@@ -119,6 +119,13 @@ pub async fn advance_from_park(
     .bind(JobControl::WaitingForInput.as_str())
     .execute(db)
     .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(PipelineError::InvalidTransition {
+            from: "unknown".to_string(),
+            to: next_step_name.to_string(),
+        });
+    }
 
     Ok(())
 }

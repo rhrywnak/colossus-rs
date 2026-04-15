@@ -26,7 +26,6 @@ use crate::worker::fetcher_recovery::{recover_timeout, recover_zombie};
 /// Called on worker startup and periodically by the recovery loop.
 /// Does not execute steps or call on_cancel — only resets job status
 /// and logs events.
-#[allow(dead_code)] // Called by Worker main loop in P1-14
 pub(crate) async fn recover_orphans(
     db: &PgPool,
     config: &WorkerConfig,

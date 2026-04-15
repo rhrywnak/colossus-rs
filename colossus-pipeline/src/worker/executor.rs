@@ -34,7 +34,6 @@ use crate::worker::config::WorkerConfig;
 use crate::worker::heartbeat::spawn_heartbeat;
 
 /// Cancel-watcher polling query — reads the raw control column text.
-#[allow(dead_code)] // Used by execute_step, which is called by Worker main loop in P1-14
 const CANCEL_POLL_SQL: &str = "SELECT control FROM pipeline_jobs WHERE id = $1";
 
 /// Execute a single step of a pipeline job.
@@ -45,7 +44,6 @@ const CANCEL_POLL_SQL: &str = "SELECT control FROM pipeline_jobs WHERE id = $1";
 ///
 /// Returns an `ExecutionResult` that the Worker uses to drive the FSM.
 /// The heartbeat task is always aborted before returning.
-#[allow(dead_code)] // Called by Worker main loop in P1-14
 pub(crate) async fn execute_step<T: Task>(
     job: &JobRow,
     db: &PgPool,

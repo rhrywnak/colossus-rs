@@ -181,78 +181,86 @@ impl<T: Task> Worker<T> {
         Ok(())
     }
 
-    /// Attempt to claim one job and spawn a task to execute it.
+    /// Claim all available jobs up to max concurrency and spawn tasks.
     ///
-    /// Acquires a semaphore permit non-blocking. If no permits are available
-    /// (at max concurrency), returns immediately. If no jobs are available
-    /// in the queue, drops the permit and returns.
+    /// Loops until either no semaphore permits are available (at max
+    /// concurrency) or no jobs remain in the queue. This ensures a single
+    /// NOTIFY representing multiple inserts claims all available jobs
+    /// without waiting for the next poll tick.
     async fn try_claim_and_run(&self, semaphore: &Arc<Semaphore>) {
-        let permit = match semaphore.clone().try_acquire_owned() {
-            Ok(p) => p,
-            Err(_) => return, // At max concurrency
-        };
+        loop {
+            let permit = match semaphore.clone().try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => return, // At max concurrency
+            };
 
-        let job = match fetcher::claim(
-            &self.db,
-            &self.config.worker_id,
-            None,
-        )
-        .await
-        {
-            Ok(Some(job)) => job,
-            Ok(None) => {
-                drop(permit);
-                return; // No jobs available
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to claim job");
-                drop(permit);
-                return;
-            }
-        };
-
-        let db = self.db.clone();
-        let context = Arc::clone(&self.context);
-        let config = self.config.clone();
-        let job_id = job.id;
-        let step_name = job.current_step.clone();
-
-        tokio::spawn(async move {
-            // Log step started
-            if let Err(e) = events::log(
-                &db,
-                job_id,
-                &step_name,
-                events::EVT_STEP_STARTED,
-                "Step execution started",
+            let job = match fetcher::claim(
+                &self.db,
+                &self.config.worker_id,
                 None,
             )
             .await
             {
-                tracing::warn!(
-                    %job_id,
-                    error = %e,
-                    "Failed to log step_started event"
-                );
-            }
+                Ok(Some(job)) => job,
+                Ok(None) => {
+                    drop(permit);
+                    return; // No more jobs
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "Failed to claim job");
+                    drop(permit);
+                    return;
+                }
+            };
 
-            // Execute the step
-            let result = execute_step::<T>(&job, &db, &context, &config).await;
+            // TODO(Phase 2): Set timeout_at from Step::DEFAULT_TIMEOUT_SECS or
+            // pipeline_config.step_config after claiming. Currently steps run
+            // without timeout unless timeout_at is set externally. The executor
+            // handles timeout_at correctly when present — the gap is setting it.
 
-            // Handle the result
-            if let Err(e) =
-                handle_execution_result::<T>(&db, &job, result, &config).await
-            {
-                tracing::error!(
-                    %job_id,
-                    error = %e,
-                    "Failed to handle execution result"
-                );
-            }
+            let db = self.db.clone();
+            let context = Arc::clone(&self.context);
+            let config = self.config.clone();
+            let job_id = job.id;
+            let step_name = job.current_step.clone();
 
-            // Permit dropped here — releases the semaphore slot
-            drop(permit);
-        });
+            tokio::spawn(async move {
+                // Log step started
+                if let Err(e) = events::log(
+                    &db,
+                    job_id,
+                    &step_name,
+                    events::EVT_STEP_STARTED,
+                    "Step execution started",
+                    None,
+                )
+                .await
+                {
+                    tracing::warn!(
+                        %job_id,
+                        error = %e,
+                        "Failed to log step_started event"
+                    );
+                }
+
+                // Execute the step
+                let result = execute_step::<T>(&job, &db, &context, &config).await;
+
+                // Handle the result
+                if let Err(e) =
+                    handle_execution_result::<T>(&db, &job, result, &config).await
+                {
+                    tracing::error!(
+                        %job_id,
+                        error = %e,
+                        "Failed to handle execution result"
+                    );
+                }
+
+                // Permit dropped here — releases the semaphore slot
+                drop(permit);
+            });
+        }
     }
 }
 

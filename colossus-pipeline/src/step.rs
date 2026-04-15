@@ -59,7 +59,6 @@ pub enum StepResult<T: Task> {
 /// Internal result returned by executor::execute_step.
 /// Not part of the public API — the Worker uses this to decide next action.
 #[derive(Debug)]
-#[allow(dead_code)] // Used by Worker main loop in P1-14
 pub(crate) enum ExecutionResult<T: Task> {
     /// Step completed. Carry the StepResult and any accumulated result JSONB.
     Success(StepResult<T>, serde_json::Value),

@@ -262,6 +262,45 @@ impl<'a> Scheduler<'a> {
         Ok(())
     }
 
+    /// Advance a parked job to a specific next step.
+    ///
+    /// Validates the transition via `T::validate_transition`, then calls
+    /// `advance_from_park` to clear WaitingForInput and set the next step.
+    /// Used when external input has been received and the job should
+    /// continue to a specific next step.
+    pub async fn advance<T: Task>(
+        &self,
+        job_id: Uuid,
+        next_task: T,
+    ) -> Result<(), PipelineError> {
+        let job = self.status(job_id).await?;
+        let next_step_name = next_task.current_step_name();
+
+        T::validate_transition(&job.current_step, next_step_name)?;
+
+        let next_step_data = serde_json::to_value(&next_task)?;
+
+        fetcher_api::advance_from_park(
+            self.db,
+            job_id,
+            &next_step_data,
+            next_step_name,
+        )
+        .await?;
+
+        events::log(
+            self.db,
+            job_id,
+            next_step_name,
+            events::EVT_ADVANCED,
+            "Job advanced to next step",
+            None,
+        )
+        .await?;
+
+        Ok(())
+    }
+
     /// Fetch the event log for a job, ordered chronologically.
     ///
     /// Returns an empty Vec if the job has no events (not an error).
