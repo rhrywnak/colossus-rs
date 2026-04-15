@@ -36,3 +36,4 @@ pub use schema::{JobControl, JobRow, JobStatus, PipelineEvent};
 pub use step::{Step, StepResult};
 pub use task::Task;
 pub use events::EVT_JOB_SUBMITTED;
+pub use scheduler::Scheduler;
