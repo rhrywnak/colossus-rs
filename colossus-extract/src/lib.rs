@@ -27,6 +27,7 @@
 
 pub mod error;
 pub mod prompt;
+pub mod providers;
 pub mod resolver;
 pub mod schema;
 pub mod splitter;
@@ -36,6 +37,7 @@ pub mod types;
 // --- Public API re-exports ---
 pub use error::PipelineError;
 pub use prompt::{PromptArtifact, PromptBuilder};
+pub use providers::AnthropicProvider;
 pub use resolver::NormalizedEntityResolver;
 pub use schema::{
     CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
