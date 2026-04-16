@@ -15,6 +15,7 @@
 //! - `ExtractionSchema` — defines what to extract (loaded from YAML)
 //! - `PromptBuilder` — constructs LLM prompts from templates
 //! - `LlmProvider` trait — model-agnostic LLM interface
+//! - `EmbeddingProvider` trait — converts text to vectors for indexing and retrieval
 //! - `EntityResolver` trait — deduplicates entities
 //! - `TextSplitter` trait — chunks large documents (future use)
 //!
@@ -35,12 +36,12 @@ pub mod types;
 // --- Public API re-exports ---
 pub use error::PipelineError;
 pub use prompt::{PromptArtifact, PromptBuilder};
+pub use resolver::NormalizedEntityResolver;
 pub use schema::{
     CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
 };
-pub use resolver::NormalizedEntityResolver;
 pub use splitter::FixedSizeSplitter;
-pub use traits::{EntityResolver, LlmProvider, TextSplitter};
+pub use traits::{EmbeddingProvider, EntityResolver, LlmProvider, LlmResponse, TextSplitter};
 pub use types::{
     ExtractedEntity, ExtractedRelationship, ExtractionResult, GroundingStatus, KnownEntity,
     PruningStats, ResolutionMethod, ResolvedEntity, TextChunk,
