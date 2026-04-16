@@ -38,6 +38,7 @@ pub mod types;
 pub use error::PipelineError;
 pub use prompt::{PromptArtifact, PromptBuilder};
 pub use providers::AnthropicProvider;
+pub use providers::FastembedProvider;
 pub use providers::VllmProvider;
 pub use resolver::NormalizedEntityResolver;
 pub use schema::{
