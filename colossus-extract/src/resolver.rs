@@ -13,7 +13,7 @@ use strsim::jaro_winkler;
 
 use crate::error::PipelineError;
 use crate::traits::EntityResolver;
-use crate::types::{ExtractedEntity, KnownEntity, ResolvedEntity, ResolutionMethod};
+use crate::types::{ExtractedEntity, KnownEntity, ResolutionMethod, ResolvedEntity};
 
 /// Resolves extracted entities against known entities using
 /// exact, normalized, and fuzzy string matching.
@@ -34,7 +34,9 @@ pub struct NormalizedEntityResolver {
 
 impl NormalizedEntityResolver {
     pub fn new() -> Self {
-        Self { fuzzy_threshold: 0.85 }
+        Self {
+            fuzzy_threshold: 0.85,
+        }
     }
 
     /// Set a custom fuzzy matching threshold.
@@ -161,8 +163,7 @@ impl NormalizedEntityResolver {
 
         if best_score >= self.fuzzy_threshold {
             // Warn on ambiguous matches — two candidates within 0.05 of each other
-            if second_best_score >= self.fuzzy_threshold
-                && (best_score - second_best_score) < 0.05
+            if second_best_score >= self.fuzzy_threshold && (best_score - second_best_score) < 0.05
             {
                 tracing::warn!(
                     entity = %extracted.label,
@@ -219,11 +220,8 @@ fn normalize_name(name: &str) -> String {
     // Remove common suffixes — checked in order, longest-first within
     // each suffix family to avoid partial stripping
     let suffixes = [
-        ", inc.", ", inc", " inc.", " inc",
-        ", llc", " llc",
-        ", pllc", " pllc",
-        ", ltd.", " ltd.", ", ltd", " ltd",
-        ", p.c.", " p.c.",
+        ", inc.", ", inc", " inc.", " inc", ", llc", " llc", ", pllc", " pllc", ", ltd.", " ltd.",
+        ", ltd", " ltd", ", p.c.", " p.c.",
     ];
     for suffix in &suffixes {
         if s.ends_with(suffix) {
@@ -465,7 +463,10 @@ mod tests {
         assert_eq!(normalize_name("MARIE AWAD"), "marie awad");
         assert_eq!(normalize_name("George R. Phillips"), "george phillips");
         assert_eq!(normalize_name("George R Phillips"), "george phillips");
-        assert_eq!(normalize_name("Penzien & McBride, PLLC"), "penzien & mcbride");
+        assert_eq!(
+            normalize_name("Penzien & McBride, PLLC"),
+            "penzien & mcbride"
+        );
         assert_eq!(normalize_name("The Law Firm"), "law firm");
         assert_eq!(normalize_name("Acme Corp, Inc."), "acme corp");
         assert_eq!(normalize_name("Smith & Jones, Ltd."), "smith & jones");

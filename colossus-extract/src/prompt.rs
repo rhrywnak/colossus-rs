@@ -57,10 +57,13 @@ impl PromptBuilder {
     fn load_template(&mut self, name: &str) -> Result<&str, PipelineError> {
         if !self.cache.contains_key(name) {
             let path = self.template_dir.join(name);
-            let content = std::fs::read_to_string(&path)
-                .map_err(|e| PipelineError::Template(
-                    format!("Failed to load template '{}': {}", path.display(), e)
-                ))?;
+            let content = std::fs::read_to_string(&path).map_err(|e| {
+                PipelineError::Template(format!(
+                    "Failed to load template '{}': {}",
+                    path.display(),
+                    e
+                ))
+            })?;
             self.cache.insert(name.to_string(), content);
         }
         Ok(self.cache.get(name).expect("just inserted"))

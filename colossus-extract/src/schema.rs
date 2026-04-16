@@ -216,10 +216,13 @@ pub struct PatternConfig {
 impl ExtractionSchema {
     /// Load a schema from a YAML file.
     pub fn from_file(path: &Path) -> Result<Self, PipelineError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| PipelineError::Schema(
-                format!("Failed to read schema file {}: {}", path.display(), e)
-            ))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            PipelineError::Schema(format!(
+                "Failed to read schema file {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
         let schema: Self = serde_yaml::from_str(&content)?;
         schema.validate()?;
         Ok(schema)
@@ -234,12 +237,11 @@ impl ExtractionSchema {
 
     /// Validate semantic correctness of the schema.
     pub fn validate(&self) -> Result<(), PipelineError> {
-        let entity_names: HashSet<&str> = self.entity_types
-            .iter()
-            .map(|e| e.name.as_str())
-            .collect();
+        let entity_names: HashSet<&str> =
+            self.entity_types.iter().map(|e| e.name.as_str()).collect();
 
-        let relationship_names: HashSet<&str> = self.relationship_types
+        let relationship_names: HashSet<&str> = self
+            .relationship_types
             .iter()
             .map(|r| r.name.as_str())
             .collect();
@@ -247,50 +249,45 @@ impl ExtractionSchema {
         // Check that all patterns reference valid entity and relationship types
         for pattern in &self.valid_patterns {
             if !entity_names.contains(pattern.from.as_str()) {
-                return Err(PipelineError::Schema(
-                    format!(
-                        "Pattern references unknown entity type '{}' in 'from'",
-                        pattern.from,
-                    )
-                ));
+                return Err(PipelineError::Schema(format!(
+                    "Pattern references unknown entity type '{}' in 'from'",
+                    pattern.from,
+                )));
             }
             if !entity_names.contains(pattern.to.as_str()) {
-                return Err(PipelineError::Schema(
-                    format!(
-                        "Pattern references unknown entity type '{}' in 'to'",
-                        pattern.to,
-                    )
-                ));
+                return Err(PipelineError::Schema(format!(
+                    "Pattern references unknown entity type '{}' in 'to'",
+                    pattern.to,
+                )));
             }
             if !relationship_names.contains(pattern.relationship.as_str()) {
-                return Err(PipelineError::Schema(
-                    format!(
-                        "Pattern references unknown relationship type '{}'",
-                        pattern.relationship,
-                    )
-                ));
+                return Err(PipelineError::Schema(format!(
+                    "Pattern references unknown relationship type '{}'",
+                    pattern.relationship,
+                )));
             }
         }
 
         // Check for duplicate entity type names
         if entity_names.len() != self.entity_types.len() {
             return Err(PipelineError::Schema(
-                "Duplicate entity type names found".to_string()
+                "Duplicate entity type names found".to_string(),
             ));
         }
 
         // Check for duplicate relationship type names
         if relationship_names.len() != self.relationship_types.len() {
             return Err(PipelineError::Schema(
-                "Duplicate relationship type names found".to_string()
+                "Duplicate relationship type names found".to_string(),
             ));
         }
 
         // Foundation documents need at least one foundation + required entity
         if self.document_category == DocumentCategory::Foundation {
-            let has_foundation = self.entity_types.iter().any(|e| {
-                e.category == EntityCategory::Foundation && e.required
-            });
+            let has_foundation = self
+                .entity_types
+                .iter()
+                .any(|e| e.category == EntityCategory::Foundation && e.required);
             if !has_foundation {
                 return Err(PipelineError::Schema(
                     "Document category is foundation but no entity type has \
@@ -348,9 +345,7 @@ impl ExtractionSchema {
 
         // Warn (don't error) if derived grounding lacks provenance flag
         for entity in &self.entity_types {
-            if entity.grounding_mode == GroundingMode::Derived
-                && !entity.provenance_required
-            {
+            if entity.grounding_mode == GroundingMode::Derived && !entity.provenance_required {
                 tracing::warn!(
                     entity = %entity.name,
                     "Entity has grounding_mode = derived but provenance_required = false"

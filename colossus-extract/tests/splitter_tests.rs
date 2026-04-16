@@ -33,7 +33,11 @@ fn test_multiple_chunks_with_overlap() {
     let text = "aaaa bbb cc ddd eeee"; // 20 chars
     let chunks = splitter.split(text);
 
-    assert!(chunks.len() >= 2, "Expected at least 2 chunks, got {}", chunks.len());
+    assert!(
+        chunks.len() >= 2,
+        "Expected at least 2 chunks, got {}",
+        chunks.len()
+    );
 
     // Verify indices are sequential
     for (i, chunk) in chunks.iter().enumerate() {
@@ -136,4 +140,3 @@ fn test_zero_chunk_size_panics() {
 fn test_overlap_equals_chunk_size_panics() {
     FixedSizeSplitter::with_config(100, 100);
 }
-

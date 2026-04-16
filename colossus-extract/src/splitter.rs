@@ -123,9 +123,7 @@ fn adjust_end(text: &str, start: usize, approx_end: usize) -> usize {
     let bytes = text.as_bytes();
 
     // If we're already at a word boundary, no adjustment needed
-    if bytes[approx_end].is_ascii_whitespace()
-        || bytes[approx_end - 1].is_ascii_whitespace()
-    {
+    if bytes[approx_end].is_ascii_whitespace() || bytes[approx_end - 1].is_ascii_whitespace() {
         return approx_end;
     }
 

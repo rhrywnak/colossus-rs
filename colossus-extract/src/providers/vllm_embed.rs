@@ -275,9 +275,11 @@ fn validate_single(
     response: EmbeddingResponse,
     expected_dims: u32,
 ) -> Result<Vec<f32>, PipelineError> {
-    let entry = response.data.into_iter().next().ok_or_else(|| {
-        PipelineError::LlmProvider("vLLM returned no embedding data".into())
-    })?;
+    let entry = response
+        .data
+        .into_iter()
+        .next()
+        .ok_or_else(|| PipelineError::LlmProvider("vLLM returned no embedding data".into()))?;
 
     if entry.embedding.len() as u32 != expected_dims {
         return Err(PipelineError::LlmProvider(format!(
@@ -464,10 +466,7 @@ mod tests {
     /// validate_batch errors when data.len() disagrees with expected_count.
     #[test]
     fn validate_batch_errors_on_count_mismatch() {
-        let response = make_response(vec![
-            (0, vec![0.0, 0.0]),
-            (1, vec![1.0, 1.0]),
-        ]);
+        let response = make_response(vec![(0, vec![0.0, 0.0]), (1, vec![1.0, 1.0])]);
         let err = validate_batch(response, 3, 2).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("dropped or duplicated"), "got: {msg}");

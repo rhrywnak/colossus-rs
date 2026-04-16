@@ -2,9 +2,7 @@
 
 use std::path::PathBuf;
 
-use colossus_extract::{
-    DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
-};
+use colossus_extract::{DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -19,8 +17,8 @@ fn complaint_yaml() -> String {
 
 #[test]
 fn test_load_complaint_schema_from_str() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml())
-        .expect("complaint schema should parse");
+    let schema =
+        ExtractionSchema::from_yaml_str(&complaint_yaml()).expect("complaint schema should parse");
     assert_eq!(schema.document_type, "complaint");
 }
 
@@ -40,7 +38,11 @@ fn test_entity_type_count() {
 #[test]
 fn test_relationship_type_count() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(schema.relationship_types.len(), 6, "Expected 6 relationship types");
+    assert_eq!(
+        schema.relationship_types.len(),
+        6,
+        "Expected 6 relationship types"
+    );
 }
 
 #[test]
@@ -52,18 +54,26 @@ fn test_pattern_count() {
 #[test]
 fn test_extraction_rules_loaded() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(schema.extraction_rules.len(), 4, "Expected 4 extraction rules");
+    assert_eq!(
+        schema.extraction_rules.len(),
+        4,
+        "Expected 4 extraction rules"
+    );
 }
 
 #[test]
 fn test_entity_type_properties() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    let party = schema.entity_types.iter()
+    let party = schema
+        .entity_types
+        .iter()
         .find(|e| e.name == "Party")
         .expect("Party entity type should exist");
     assert_eq!(party.properties.len(), 3, "Party should have 3 properties");
 
-    let role_prop = party.properties.iter()
+    let role_prop = party
+        .properties
+        .iter()
         .find(|p| p.name == "role")
         .expect("role property should exist");
     assert!(role_prop.required, "role should be required");
@@ -145,7 +155,10 @@ valid_patterns: []
 "#;
     let err = ExtractionSchema::from_yaml_str(yaml).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("Duplicate"), "Error should mention duplicates: {msg}");
+    assert!(
+        msg.contains("Duplicate"),
+        "Error should mention duplicates: {msg}"
+    );
 }
 
 #[test]
@@ -161,7 +174,10 @@ valid_patterns: []
 "#;
     let err = ExtractionSchema::from_yaml_str(yaml).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("Duplicate"), "Error should mention duplicates: {msg}");
+    assert!(
+        msg.contains("Duplicate"),
+        "Error should mention duplicates: {msg}"
+    );
 }
 
 #[test]
@@ -170,8 +186,8 @@ fn test_to_prompt_json_produces_valid_json() {
     let json_str = schema.to_prompt_json().expect("should produce JSON");
 
     // Verify it's valid JSON by parsing it
-    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("prompt JSON should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("prompt JSON should be valid");
     assert_eq!(parsed["document_type"], "complaint");
     assert!(parsed["entity_types"].is_array());
 }
@@ -207,12 +223,13 @@ valid_patterns: []
 
 #[test]
 fn test_from_file_nonexistent_returns_error() {
-    let result = ExtractionSchema::from_file(
-        &PathBuf::from("/nonexistent/schema.yaml"),
-    );
+    let result = ExtractionSchema::from_file(&PathBuf::from("/nonexistent/schema.yaml"));
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("Failed to read"), "Error should describe read failure: {msg}");
+    assert!(
+        msg.contains("Failed to read"),
+        "Error should describe read failure: {msg}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -226,8 +243,8 @@ fn complaint_v2_yaml() -> String {
 
 #[test]
 fn test_load_complaint_v2_schema() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml())
-        .expect("v2 schema should parse");
+    let schema =
+        ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).expect("v2 schema should parse");
     assert_eq!(schema.document_type, "complaint");
     assert_eq!(schema.version, "2.0");
     assert_eq!(schema.document_category, DocumentCategory::Foundation);
@@ -236,7 +253,9 @@ fn test_load_complaint_v2_schema() {
 #[test]
 fn test_v2_entity_categories() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).unwrap();
-    let party = schema.entity_types.iter()
+    let party = schema
+        .entity_types
+        .iter()
         .find(|e| e.name == "Party")
         .expect("Party should exist");
     assert_eq!(party.category, EntityCategory::Foundation);
@@ -248,7 +267,9 @@ fn test_v2_entity_categories() {
 #[test]
 fn test_v2_legal_count_grounding() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).unwrap();
-    let lc = schema.entity_types.iter()
+    let lc = schema
+        .entity_types
+        .iter()
         .find(|e| e.name == "LegalCount")
         .expect("LegalCount should exist");
     assert_eq!(lc.grounding_mode, GroundingMode::HeadingMatch);
@@ -258,7 +279,9 @@ fn test_v2_legal_count_grounding() {
 #[test]
 fn test_v2_allegation_structural() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).unwrap();
-    let alleg = schema.entity_types.iter()
+    let alleg = schema
+        .entity_types
+        .iter()
         .find(|e| e.name == "ComplaintAllegation")
         .expect("ComplaintAllegation should exist");
     assert_eq!(alleg.category, EntityCategory::Structural);
@@ -268,7 +291,9 @@ fn test_v2_allegation_structural() {
 #[test]
 fn test_v2_harm_derived() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).unwrap();
-    let harm = schema.entity_types.iter()
+    let harm = schema
+        .entity_types
+        .iter()
         .find(|e| e.name == "Harm")
         .expect("Harm should exist");
     assert_eq!(harm.grounding_mode, GroundingMode::Derived);
@@ -284,15 +309,23 @@ fn test_v2_completeness_rules() {
 
 #[test]
 fn test_backward_compat_v1_schema() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml())
-        .expect("v1 schema should still load");
+    let schema =
+        ExtractionSchema::from_yaml_str(&complaint_yaml()).expect("v1 schema should still load");
     assert_eq!(schema.version, "1.0");
     assert_eq!(schema.document_category, DocumentCategory::Evidence);
     for entity in &schema.entity_types {
-        assert_eq!(entity.category, EntityCategory::Evidence,
-            "Default category should be Evidence for '{}'", entity.name);
-        assert_eq!(entity.grounding_mode, GroundingMode::Verbatim,
-            "Default grounding should be Verbatim for '{}'", entity.name);
+        assert_eq!(
+            entity.category,
+            EntityCategory::Evidence,
+            "Default category should be Evidence for '{}'",
+            entity.name
+        );
+        assert_eq!(
+            entity.grounding_mode,
+            GroundingMode::Verbatim,
+            "Default grounding should be Verbatim for '{}'",
+            entity.name
+        );
     }
 }
 
@@ -312,8 +345,10 @@ valid_patterns: []
 "#;
     let err = ExtractionSchema::from_yaml_str(yaml).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.to_lowercase().contains("foundation"),
-        "Error should mention 'foundation': {msg}");
+    assert!(
+        msg.to_lowercase().contains("foundation"),
+        "Error should mention 'foundation': {msg}"
+    );
 }
 
 #[test]
@@ -355,7 +390,10 @@ completeness_rules:
 "#;
     let err = ExtractionSchema::from_yaml_str(yaml).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("GHOST_REL"), "Error should mention 'GHOST_REL': {msg}");
+    assert!(
+        msg.contains("GHOST_REL"),
+        "Error should mention 'GHOST_REL': {msg}"
+    );
 }
 
 #[test]
@@ -371,18 +409,33 @@ valid_patterns: []
 "#;
     let err = ExtractionSchema::from_yaml_str(yaml).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("min_count"), "Error should mention 'min_count': {msg}");
+    assert!(
+        msg.contains("min_count"),
+        "Error should mention 'min_count': {msg}"
+    );
 }
 
 #[test]
 fn test_v2_prompt_json_includes_new_fields() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_v2_yaml()).unwrap();
     let json_str = schema.to_prompt_json().expect("should produce JSON");
-    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("prompt JSON should be valid");
-    assert!(parsed.get("version").is_some(), "JSON should have 'version'");
-    assert!(parsed.get("document_category").is_some(), "JSON should have 'document_category'");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("prompt JSON should be valid");
+    assert!(
+        parsed.get("version").is_some(),
+        "JSON should have 'version'"
+    );
+    assert!(
+        parsed.get("document_category").is_some(),
+        "JSON should have 'document_category'"
+    );
     let first_entity = &parsed["entity_types"][0];
-    assert!(first_entity.get("category").is_some(), "Entity should have 'category'");
-    assert!(first_entity.get("grounding_mode").is_some(), "Entity should have 'grounding_mode'");
+    assert!(
+        first_entity.get("category").is_some(),
+        "Entity should have 'category'"
+    );
+    assert!(
+        first_entity.get("grounding_mode").is_some(),
+        "Entity should have 'grounding_mode'"
+    );
 }

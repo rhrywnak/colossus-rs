@@ -37,7 +37,12 @@ pub mod types;
 // --- Public API re-exports ---
 pub use error::PipelineError;
 pub use prompt::{PromptArtifact, PromptBuilder};
+pub use providers::embedding_provider_from_env;
+pub use providers::embedding_provider_from_lookup;
+pub use providers::llm_provider_from_env;
+pub use providers::llm_provider_from_lookup;
 pub use providers::AnthropicProvider;
+pub use providers::EnvLookup;
 pub use providers::FastembedProvider;
 pub use providers::VllmEmbeddingProvider;
 pub use providers::VllmProvider;
