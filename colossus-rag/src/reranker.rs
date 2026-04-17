@@ -26,11 +26,13 @@
 //! reranker has only one implementation (embedding cosine similarity)
 //! and is optional in the pipeline. A concrete struct is simpler —
 //! the pipeline stores it as `Option<EmbeddingReranker>` and skips
-//! the step when `None`.
+//! the step when `None`. The embedding backend it calls is abstracted
+//! via the `EmbeddingProvider` trait, so a single reranker implementation
+//! works with any provider (Fastembed, vLLM, future backends).
 
 use std::sync::Arc;
 
-use rig::embeddings::EmbeddingModel;
+use colossus_extract::EmbeddingProvider;
 
 use crate::error::RagError;
 use crate::types::ContextChunk;
@@ -41,14 +43,16 @@ use crate::types::ContextChunk;
 
 /// Reranks expanded context chunks by semantic similarity to the question.
 ///
-/// ## Rust Learning: Arc sharing the embedding model
+/// ## Rust Learning: Arc sharing the embedding provider
 ///
-/// The same `Arc<rig_fastembed::EmbeddingModel>` that the QdrantRetriever
-/// uses is cloned (cheap Arc reference count bump, not a model copy) and
-/// passed to the reranker. Both stages share the same in-memory ONNX model.
+/// The same `Arc<dyn EmbeddingProvider>` that the QdrantRetriever uses is
+/// cloned (cheap Arc reference count bump, not a provider copy) and passed
+/// to the reranker. Both stages share the same underlying embedding backend.
 pub struct EmbeddingReranker {
-    /// The fastembed embedding model (shared with the retriever via Arc).
-    embedding_model: Arc<rig_fastembed::EmbeddingModel>,
+    /// The embedding provider (shared with the retriever via Arc).
+    /// Can be any implementation of EmbeddingProvider — FastembedProvider,
+    /// VllmEmbeddingProvider, or any future backend.
+    embedding_provider: Arc<dyn EmbeddingProvider>,
 
     /// Minimum cosine similarity for a graph-expanded chunk to be kept.
     /// Chunks below this threshold are filtered out. Typical range: 0.2–0.5.
@@ -56,18 +60,15 @@ pub struct EmbeddingReranker {
 }
 
 impl EmbeddingReranker {
-    /// Create a new reranker with a shared embedding model and threshold.
+    /// Create a new reranker with a shared embedding provider and threshold.
     ///
     /// ## Parameters
-    /// - `embedding_model`: The same Arc used by QdrantRetriever (cheap clone)
+    /// - `embedding_provider`: The same Arc used by QdrantRetriever (cheap clone)
     /// - `threshold`: Minimum cosine similarity (0.0–1.0) for graph-expanded
     ///   chunks to pass through. Qdrant hits (score > 0.0) always pass.
-    pub fn new(
-        embedding_model: Arc<rig_fastembed::EmbeddingModel>,
-        threshold: f32,
-    ) -> Self {
+    pub fn new(embedding_provider: Arc<dyn EmbeddingProvider>, threshold: f32) -> Self {
         Self {
-            embedding_model,
+            embedding_provider,
             threshold,
         }
     }
@@ -109,24 +110,22 @@ impl EmbeddingReranker {
         }
 
         // Embed the question.
-        let question_embedding = self
-            .embedding_model
-            .embed_text(question)
+        let q_vec = self
+            .embedding_provider
+            .embed(question)
             .await
             .map_err(|e| RagError::EmbeddingError(e.to_string()))?;
-        let q_vec: Vec<f32> = question_embedding.vec.iter().map(|&v| v as f32).collect();
 
         // Embed each graph chunk and filter by cosine similarity.
         let mut kept_graph: Vec<ContextChunk> = Vec::new();
         let mut filtered_count: usize = 0;
 
         for chunk in graph_chunks {
-            let chunk_embedding = self
-                .embedding_model
-                .embed_text(&chunk.content)
+            let c_vec = self
+                .embedding_provider
+                .embed(&chunk.content)
                 .await
                 .map_err(|e| RagError::EmbeddingError(e.to_string()))?;
-            let c_vec: Vec<f32> = chunk_embedding.vec.iter().map(|&v| v as f32).collect();
 
             let similarity = cosine_similarity(&q_vec, &c_vec);
 

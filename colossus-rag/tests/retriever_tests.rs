@@ -19,15 +19,16 @@
 //! fastembed's model cache uses a file lock. Running multiple tests in parallel
 //! causes lock contention. `--test-threads=1` runs tests sequentially, avoiding this.
 
-// These tests only compile when both features are enabled.
-#![cfg(all(feature = "qdrant", feature = "fastembed"))]
+// These tests only compile when the qdrant feature is enabled.
+// Embedding backend is injected at runtime (fastembed dev-dep used in integration tests).
+#![cfg(feature = "qdrant")]
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use colossus_rag::{
-    scope_filters_to_qdrant_filter, ContextChunk, QdrantRetriever, ScopeFilter,
-    ScopeFilterType, VectorRetriever,
+    scope_filters_to_qdrant_filter, ContextChunk, QdrantRetriever, ScopeFilter, ScopeFilterType,
+    VectorRetriever,
 };
 use qdrant_client::qdrant::{value::Kind, Condition, Value};
 
@@ -125,10 +126,7 @@ fn test_scope_filter_empty_produces_none() {
     let filters: Vec<ScopeFilter> = vec![];
     let qdrant_filter = scope_filters_to_qdrant_filter(&filters);
 
-    assert!(
-        qdrant_filter.is_none(),
-        "Empty filters should produce None"
-    );
+    assert!(qdrant_filter.is_none(), "Empty filters should produce None");
 }
 
 // ---------------------------------------------------------------------------
@@ -407,11 +405,13 @@ async fn test_search_with_node_type_filter() {
 #[tokio::test]
 #[ignore]
 async fn test_search_high_threshold_fewer_results() {
+    use colossus_extract::{EmbeddingProvider, FastembedProvider};
+
     let qdrant_url = get_qdrant_grpc_url();
 
-    let fastembed_client = rig_fastembed::Client::new();
-    let embedding_model = Arc::new(
-        fastembed_client.embedding_model(&rig_fastembed::FastembedModel::NomicEmbedTextV15),
+    let provider: Arc<dyn EmbeddingProvider> = Arc::new(
+        FastembedProvider::new_from_huggingface(fastembed::EmbeddingModel::NomicEmbedTextV15, None)
+            .expect("Failed to create FastembedProvider for test"),
     );
 
     let qdrant_client = Arc::new(
@@ -422,12 +422,7 @@ async fn test_search_high_threshold_fewer_results() {
     );
 
     // Use a very high threshold — should filter out most results.
-    let retriever = QdrantRetriever::new(
-        embedding_model,
-        qdrant_client,
-        "colossus_evidence",
-        0.99,
-    );
+    let retriever = QdrantRetriever::new(provider, qdrant_client, "colossus_evidence", 0.99);
 
     let results = retriever
         .search("What did Phillips say about the $50,000?", 5, &[])
@@ -454,8 +449,8 @@ async fn test_search_high_threshold_fewer_results() {
 /// Get the Qdrant gRPC URL from environment or use the DEV default.
 fn get_qdrant_grpc_url() -> String {
     std::env::var("QDRANT_GRPC_URL").unwrap_or_else(|_| {
-        let rest_url = std::env::var("QDRANT_URL")
-            .unwrap_or_else(|_| "http://10.10.100.200:6333".to_string());
+        let rest_url =
+            std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://10.10.100.200:6333".to_string());
         rest_url.replace(":6333", ":6334")
     })
 }
@@ -465,11 +460,13 @@ fn get_qdrant_grpc_url() -> String {
 /// Uses default score threshold of 0.0 (return all results regardless of score)
 /// to make tests predictable.
 async fn create_test_retriever() -> QdrantRetriever {
+    use colossus_extract::{EmbeddingProvider, FastembedProvider};
+
     let qdrant_url = get_qdrant_grpc_url();
 
-    let fastembed_client = rig_fastembed::Client::new();
-    let embedding_model = Arc::new(
-        fastembed_client.embedding_model(&rig_fastembed::FastembedModel::NomicEmbedTextV15),
+    let provider: Arc<dyn EmbeddingProvider> = Arc::new(
+        FastembedProvider::new_from_huggingface(fastembed::EmbeddingModel::NomicEmbedTextV15, None)
+            .expect("Failed to create FastembedProvider for test"),
     );
 
     let qdrant_client = Arc::new(
@@ -479,5 +476,5 @@ async fn create_test_retriever() -> QdrantRetriever {
             .expect("Failed to create Qdrant client"),
     );
 
-    QdrantRetriever::new(embedding_model, qdrant_client, "colossus_evidence", 0.0)
+    QdrantRetriever::new(provider, qdrant_client, "colossus_evidence", 0.0)
 }

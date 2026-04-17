@@ -5,9 +5,8 @@
 //! Qdrant, Neo4j, and Claude API access.
 
 use colossus_rag::{
-    AssembledContext, Citation, ContextChunk, LegalAssembler, NoOpRouter,
-    RagError, RagPipeline, RetrievalStrategy,
-    ScopeFilter, SourceReference, SynthesisResult,
+    AssembledContext, Citation, ContextChunk, LegalAssembler, NoOpRouter, RagError, RagPipeline,
+    RetrievalStrategy, ScopeFilter, SourceReference, SynthesisResult,
 };
 
 // ===========================================================================
@@ -137,7 +136,10 @@ fn test_builder_complete_builds_ok() {
         .synthesizer(Box::new(MockSynthesizer))
         .build();
 
-    assert!(result.is_ok(), "Should build successfully without expander (defaults to NoOp)");
+    assert!(
+        result.is_ok(),
+        "Should build successfully without expander (defaults to NoOp)"
+    );
 }
 
 // ===========================================================================
@@ -167,22 +169,10 @@ async fn test_pipeline_ask_with_mocks() {
         .expect("Should not error");
 
     // Verify the result has all expected fields populated.
-    assert!(
-        !result.answer.is_empty(),
-        "Answer should not be empty"
-    );
-    assert!(
-        !result.chunks.is_empty(),
-        "Should have at least one chunk"
-    );
-    assert_eq!(
-        result.stats.qdrant_hits, 1,
-        "MockRetriever returns 1 chunk"
-    );
-    assert_eq!(
-        result.stats.provider, "mock",
-        "Should use mock provider"
-    );
+    assert!(!result.answer.is_empty(), "Answer should not be empty");
+    assert!(!result.chunks.is_empty(), "Should have at least one chunk");
+    assert_eq!(result.stats.qdrant_hits, 1, "MockRetriever returns 1 chunk");
+    assert_eq!(result.stats.provider, "mock", "Should use mock provider");
 
     // Strategy should be Broad (NoOpRouter always returns Broad).
     match &result.strategy_used {
@@ -192,7 +182,10 @@ async fn test_pipeline_ask_with_mocks() {
 
     // Verify timing stats are populated.
     // (u64 is always >= 0, so we just check that total_ms makes sense.)
-    assert!(result.stats.total_ms < 5000, "Total time should be reasonable for mocks");
+    assert!(
+        result.stats.total_ms < 5000,
+        "Total time should be reasonable for mocks"
+    );
 }
 
 // ===========================================================================
@@ -213,7 +206,10 @@ async fn test_pipeline_custom_config() {
         .expect("Should build");
 
     // Pipeline should work with custom config.
-    let result = pipeline.ask("Test question").await.expect("Should not error");
+    let result = pipeline
+        .ask("Test question")
+        .await
+        .expect("Should not error");
     assert!(!result.answer.is_empty());
 }
 
@@ -241,8 +237,14 @@ async fn test_pipeline_ask_broad() {
     println!("Strategy: {}", result.stats.strategy);
     println!("Answer:\n{}\n", result.answer);
     println!("Chunks retrieved: {}", result.stats.qdrant_hits);
-    println!("Graph nodes expanded: {}", result.stats.graph_nodes_expanded);
-    println!("Context tokens (approx): {}", result.stats.context_tokens_approx);
+    println!(
+        "Graph nodes expanded: {}",
+        result.stats.graph_nodes_expanded
+    );
+    println!(
+        "Context tokens (approx): {}",
+        result.stats.context_tokens_approx
+    );
     println!("--- Timing ---");
     println!("  Route:      {} ms", result.stats.route_ms);
     println!("  Search:     {} ms", result.stats.search_ms);
@@ -269,7 +271,10 @@ async fn test_pipeline_ask_broad() {
 
     // Assertions.
     assert!(!result.answer.is_empty(), "Answer should not be empty");
-    assert!(result.stats.qdrant_hits > 0, "Should have vector search hits");
+    assert!(
+        result.stats.qdrant_hits > 0,
+        "Should have vector search hits"
+    );
     assert!(result.stats.total_ms > 0, "Total time should be > 0");
 }
 
@@ -292,7 +297,10 @@ async fn test_pipeline_ask_focused() {
     println!("Strategy: {}", result.stats.strategy);
     println!("Answer:\n{}\n", result.answer);
     println!("Chunks retrieved: {}", result.stats.qdrant_hits);
-    println!("Graph nodes expanded: {}", result.stats.graph_nodes_expanded);
+    println!(
+        "Graph nodes expanded: {}",
+        result.stats.graph_nodes_expanded
+    );
     println!("--- Timing ---");
     println!("  Route:      {} ms", result.stats.route_ms);
     println!("  Search:     {} ms", result.stats.search_ms);
@@ -340,7 +348,10 @@ async fn test_pipeline_stats_timing() {
     // All async stages should take measurable time (> 0 ms).
     // Route is in-memory and might be 0 ms on fast hardware, so we skip it.
     assert!(result.stats.search_ms > 0, "Search should take > 0 ms");
-    assert!(result.stats.synthesize_ms > 0, "Synthesize should take > 0 ms");
+    assert!(
+        result.stats.synthesize_ms > 0,
+        "Synthesize should take > 0 ms"
+    );
     assert!(result.stats.total_ms > 0, "Total should take > 0 ms");
 
     // Total should be >= sum of individual stages.
@@ -369,26 +380,25 @@ async fn test_pipeline_stats_timing() {
 /// - NEO4J_USER (e.g., neo4j)
 /// - NEO4J_PASSWORD
 /// - ANTHROPIC_API_KEY
-#[cfg(all(feature = "qdrant", feature = "fastembed", feature = "neo4j"))]
+#[cfg(all(feature = "qdrant", feature = "neo4j"))]
 async fn build_real_pipeline() -> RagPipeline {
-    use colossus_rag::{Neo4jExpander, QdrantRetriever, RigSynthesizer};
+    use colossus_extract::{AnthropicProvider, EmbeddingProvider, FastembedProvider, LlmProvider};
+    use colossus_rag::{Neo4jExpander, QdrantRetriever, RigSynthesizer, RuleBasedRouter};
     use std::sync::Arc;
 
     // --- Router ---
     let router = RuleBasedRouter::legal_defaults();
 
-    // --- Retriever (Qdrant + fastembed) ---
-    //
-    // QdrantRetriever::new() takes pre-built embedding model and Qdrant client.
-    // We construct them here the same way the retriever_tests do.
-    let qdrant_url = std::env::var("QDRANT_URL")
-        .unwrap_or_else(|_| "http://10.10.100.200:6333".to_string());
-    let qdrant_grpc_url = qdrant_url.replace(":6333", ":6334");
-
-    let fastembed_client = rig_fastembed::Client::new();
-    let embedding_model = Arc::new(
-        fastembed_client.embedding_model(&rig_fastembed::FastembedModel::NomicEmbedTextV15),
+    // --- Embedding provider (fastembed) ---
+    let embedding_provider: Arc<dyn EmbeddingProvider> = Arc::new(
+        FastembedProvider::new_from_huggingface(fastembed::EmbeddingModel::NomicEmbedTextV15, None)
+            .expect("FastembedProvider should build"),
     );
+
+    // --- Retriever (Qdrant) ---
+    let qdrant_url =
+        std::env::var("QDRANT_URL").unwrap_or_else(|_| "http://10.10.100.200:6333".to_string());
+    let qdrant_grpc_url = qdrant_url.replace(":6333", ":6334");
 
     let qdrant_client = Arc::new(
         qdrant_client::Qdrant::from_url(&qdrant_grpc_url)
@@ -398,7 +408,7 @@ async fn build_real_pipeline() -> RagPipeline {
     );
 
     let retriever = QdrantRetriever::new(
-        embedding_model,
+        embedding_provider.clone(),
         qdrant_client,
         "colossus_evidence",
         0.0,
@@ -418,10 +428,15 @@ async fn build_real_pipeline() -> RagPipeline {
     // --- Assembler ---
     let assembler = LegalAssembler::new();
 
-    // --- Synthesizer (Claude via Rig) ---
+    // --- LLM provider (Anthropic) ---
     let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
-    let synthesizer = RigSynthesizer::claude(&api_key, "claude-sonnet-4-20250514", 4096)
-        .expect("RigSynthesizer should build");
+    let llm_provider: Arc<dyn LlmProvider> = Arc::new(
+        AnthropicProvider::new(api_key, "claude-sonnet-4-20250514".to_string(), 4096)
+            .expect("AnthropicProvider should build"),
+    );
+
+    // --- Synthesizer ---
+    let synthesizer = RigSynthesizer::new(llm_provider, 4096);
 
     // --- Build pipeline ---
     RagPipeline::builder()
@@ -435,7 +450,7 @@ async fn build_real_pipeline() -> RagPipeline {
 }
 
 /// Fallback when not all features are enabled — panics with a helpful message.
-#[cfg(not(all(feature = "qdrant", feature = "fastembed", feature = "neo4j")))]
+#[cfg(not(all(feature = "qdrant", feature = "neo4j")))]
 async fn build_real_pipeline() -> RagPipeline {
     panic!(
         "Integration tests require --features full. \

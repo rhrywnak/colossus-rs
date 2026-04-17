@@ -114,7 +114,6 @@ pub struct RagPipeline {
 
     /// Optional reranker — filters expanded chunks by semantic similarity.
     /// When None, all expanded chunks pass through to the assembler.
-    #[cfg(feature = "fastembed")]
     reranker: Option<crate::reranker::EmbeddingReranker>,
 }
 
@@ -149,7 +148,6 @@ pub struct RagPipelineBuilder {
     decomposer: Option<Box<dyn QueryDecomposer>>,
     #[cfg(feature = "neo4j")]
     graph_retriever: Option<crate::graph_retriever::GraphDirectRetriever>,
-    #[cfg(feature = "fastembed")]
     reranker: Option<crate::reranker::EmbeddingReranker>,
 }
 
@@ -170,7 +168,6 @@ impl RagPipeline {
             decomposer: None,
             #[cfg(feature = "neo4j")]
             graph_retriever: None,
-            #[cfg(feature = "fastembed")]
             reranker: None,
         }
     }
@@ -258,7 +255,6 @@ impl RagPipelineBuilder {
     ///
     /// When set, graph-expanded chunks (score == 0.0) are filtered by
     /// cosine similarity to the question. Qdrant hits always pass through.
-    #[cfg(feature = "fastembed")]
     pub fn reranker(mut self, reranker: crate::reranker::EmbeddingReranker) -> Self {
         self.reranker = Some(reranker);
         self
@@ -269,23 +265,21 @@ impl RagPipelineBuilder {
     /// Returns `RagError::ConfigError` if any required component is missing.
     /// The expander defaults to [`NoOpExpander`] if not set.
     pub fn build(self) -> Result<RagPipeline, RagError> {
-        let router = self.router.ok_or_else(|| {
-            RagError::ConfigError("Pipeline requires a router".into())
-        })?;
-        let retriever = self.retriever.ok_or_else(|| {
-            RagError::ConfigError("Pipeline requires a retriever".into())
-        })?;
-        let assembler = self.assembler.ok_or_else(|| {
-            RagError::ConfigError("Pipeline requires an assembler".into())
-        })?;
-        let synthesizer = self.synthesizer.ok_or_else(|| {
-            RagError::ConfigError("Pipeline requires a synthesizer".into())
-        })?;
+        let router = self
+            .router
+            .ok_or_else(|| RagError::ConfigError("Pipeline requires a router".into()))?;
+        let retriever = self
+            .retriever
+            .ok_or_else(|| RagError::ConfigError("Pipeline requires a retriever".into()))?;
+        let assembler = self
+            .assembler
+            .ok_or_else(|| RagError::ConfigError("Pipeline requires an assembler".into()))?;
+        let synthesizer = self
+            .synthesizer
+            .ok_or_else(|| RagError::ConfigError("Pipeline requires a synthesizer".into()))?;
 
         // Expander is optional — default to NoOpExpander (returns empty vec).
-        let expander = self
-            .expander
-            .unwrap_or_else(|| Box::new(NoOpExpander));
+        let expander = self.expander.unwrap_or_else(|| Box::new(NoOpExpander));
 
         Ok(RagPipeline {
             router,
@@ -298,7 +292,6 @@ impl RagPipelineBuilder {
             decomposer: self.decomposer,
             #[cfg(feature = "neo4j")]
             graph_retriever: self.graph_retriever,
-            #[cfg(feature = "fastembed")]
             reranker: self.reranker,
         })
     }
@@ -416,14 +409,11 @@ impl RagPipeline {
         // When a reranker is configured, graph-expanded chunks (score == 0.0)
         // are filtered by cosine similarity to the question embedding.
         // Qdrant hits (score > 0.0) always pass through unconditionally.
-        #[cfg(feature = "fastembed")]
         if let Some(ref reranker) = self.reranker {
             let pre_rerank_count = chunks.len();
             let rerank_start = Instant::now();
 
-            let (reranked_chunks, filtered_count) = reranker
-                .rerank(question, chunks)
-                .await?;
+            let (reranked_chunks, filtered_count) = reranker.rerank(question, chunks).await?;
 
             chunks = reranked_chunks;
             stats.rerank_ms = rerank_start.elapsed().as_millis() as u64;
@@ -445,7 +435,9 @@ impl RagPipeline {
         // It sorts chunks by score (highest first) and formats them within
         // the token budget, dropping low-scored chunks if necessary.
         let assemble_start = Instant::now();
-        let context = self.assembler.assemble(question, &chunks, self.max_context_tokens);
+        let context = self
+            .assembler
+            .assemble(question, &chunks, self.max_context_tokens);
         stats.assemble_ms = assemble_start.elapsed().as_millis() as u64;
         stats.context_tokens_approx = context.token_estimate;
 
@@ -486,4 +478,3 @@ impl RagPipeline {
         })
     }
 }
-

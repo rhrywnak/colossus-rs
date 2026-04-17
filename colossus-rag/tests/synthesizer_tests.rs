@@ -1,198 +1,340 @@
-//! Tests for RigSynthesizer — unit tests and integration tests for Claude API.
+//! Unit tests for RigSynthesizer (P3-1 rewrite).
 //!
-//! ## Test organization
+//! These tests exercise `RigSynthesizer` through the `LlmProvider` abstraction
+//! by injecting a tiny in-memory `TestLlmProvider` stub. No network, no API
+//! keys, no feature flags.
 //!
-//! - **Unit tests** (tests 1–2): No API key needed. Test construction and config.
-//! - **Integration tests** (tests 3–5): Require ANTHROPIC_API_KEY env var.
-//!   Marked with `#[ignore]` — run with:
-//!   `cargo test -p colossus-rag --test synthesizer_tests -- --ignored --nocapture`
+//! ## What changed from the old test file
 //!
-//! ## Note on feature gates
+//! The prior suite constructed `RigSynthesizer::claude(api_key, model, max)`
+//! which no longer exists. The new constructor takes
+//! `Arc<dyn colossus_extract::LlmProvider>`, so tests build a stub provider
+//! and verify the mapping from `LlmResponse` to `SynthesisResult`.
 //!
-//! Unlike QdrantRetriever (which needs `qdrant` + `fastembed` features),
-//! RigSynthesizer uses only rig-core which is a base dependency. These tests
-//! compile with default features — no `--features full` needed.
+//! See the note at the bottom about integration tests.
 
-use colossus_rag::{
-    AssembledContext, RigSynthesizer, Synthesizer,
-};
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+
+use colossus_extract::{LlmProvider, LlmResponse, PipelineError};
+use colossus_rag::{AssembledContext, RagError, RigSynthesizer, Synthesizer};
 
 // ===========================================================================
-// Unit Tests — no API key needed
+// TestLlmProvider — minimal stub implementing the LlmProvider trait
+// ===========================================================================
+
+/// A tiny in-memory provider for unit tests. Each call to `invoke()` or
+/// `invoke_with_system()` returns a clone of the configured result and records
+/// the call so tests can assert on interaction (which method was called, with
+/// what arguments).
+///
+/// `LlmResponse` is `Clone + Debug + PartialEq + Eq + Serialize + Deserialize`
+/// (verified in colossus-extract's traits.rs), so cloning is free of surprises.
+///
+/// Interior mutability via `std::sync::Mutex` is required because the trait
+/// methods take `&self`. Locks are held briefly (push + drop), so a blocking
+/// mutex is correct here — no need for `tokio::sync::Mutex`.
+struct TestLlmProvider {
+    result: Result<LlmResponse, String>,
+    invoke_calls: Mutex<Vec<String>>,
+    invoke_with_system_calls: Mutex<Vec<(String, String)>>,
+}
+
+impl TestLlmProvider {
+    fn new_ok(response: LlmResponse) -> Self {
+        Self {
+            result: Ok(response),
+            invoke_calls: Mutex::new(Vec::new()),
+            invoke_with_system_calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn new_err(msg: &str) -> Self {
+        Self {
+            result: Err(msg.to_string()),
+            invoke_calls: Mutex::new(Vec::new()),
+            invoke_with_system_calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn invoke_call_count(&self) -> usize {
+        self.invoke_calls.lock().unwrap().len()
+    }
+
+    fn invoke_with_system_call_count(&self) -> usize {
+        self.invoke_with_system_calls.lock().unwrap().len()
+    }
+
+    fn last_invoke_with_system_args(&self) -> Option<(String, String)> {
+        self.invoke_with_system_calls
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+    }
+}
+
+#[async_trait]
+impl LlmProvider for TestLlmProvider {
+    async fn invoke(&self, prompt: &str, _max_tokens: u32) -> Result<LlmResponse, PipelineError> {
+        self.invoke_calls.lock().unwrap().push(prompt.to_string());
+        match &self.result {
+            Ok(r) => Ok(r.clone()),
+            Err(msg) => Err(PipelineError::LlmProvider(msg.clone())),
+        }
+    }
+
+    // Explicit override of the default trait method. The default impl
+    // concatenates system+prompt and delegates to `invoke()`, which would
+    // hide whether `RigSynthesizer::synthesize()` is calling the preferred
+    // `invoke_with_system` path or falling back to `invoke`. By recording
+    // calls here separately, the test can distinguish the two paths.
+    async fn invoke_with_system(
+        &self,
+        system: &str,
+        prompt: &str,
+        _max_tokens: u32,
+    ) -> Result<LlmResponse, PipelineError> {
+        self.invoke_with_system_calls
+            .lock()
+            .unwrap()
+            .push((system.to_string(), prompt.to_string()));
+        match &self.result {
+            Ok(r) => Ok(r.clone()),
+            Err(msg) => Err(PipelineError::LlmProvider(msg.clone())),
+        }
+    }
+
+    fn model_name(&self) -> &str {
+        "test-model"
+    }
+
+    fn provider_name(&self) -> &str {
+        "test-provider"
+    }
+
+    fn cost_per_input_token(&self) -> Option<f64> {
+        None
+    }
+
+    fn cost_per_output_token(&self) -> Option<f64> {
+        None
+    }
+
+    fn supports_structured_output(&self) -> bool {
+        false
+    }
+}
+
+// ===========================================================================
+// Helpers
+// ===========================================================================
+
+/// Build an `AssembledContext` with enough substance for the synthesizer to
+/// format. Uses `Default` plus explicit overrides for the fields we care about.
+fn test_context() -> AssembledContext {
+    AssembledContext {
+        system_prompt: "You are a test assistant.".into(),
+        formatted_context: "Test context".into(),
+        token_estimate: 100,
+    }
+}
+
+fn make_synthesizer(result: Result<LlmResponse, String>) -> RigSynthesizer {
+    let provider: Arc<dyn LlmProvider> = match result {
+        Ok(r) => Arc::new(TestLlmProvider::new_ok(r)),
+        Err(msg) => Arc::new(TestLlmProvider::new_err(&msg)),
+    };
+    RigSynthesizer::new(provider, 256)
+}
+
+// ===========================================================================
+// Unit tests
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Test 1: Construction with valid params succeeds
+// Test 1: Construction with a stub provider does not panic
 // ---------------------------------------------------------------------------
 
-/// Verify that `RigSynthesizer::claude()` constructs successfully with
-/// valid parameters. The API key doesn't need to be real — the client
-/// is only configured here, not connected.
 #[test]
 fn test_rig_synthesizer_construction() {
-    let result = RigSynthesizer::claude(
-        "test-api-key-not-real",
-        "claude-haiku-4-5-20251001",
-        4096,
-    );
-
-    assert!(
-        result.is_ok(),
-        "Construction should succeed with valid params: {:?}",
-        result.err()
-    );
+    let _ = make_synthesizer(Ok(LlmResponse {
+        text: "ok".into(),
+        input_tokens: None,
+        output_tokens: None,
+    }));
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: Construction with empty API key still succeeds
+// Test 2: RigSynthesizer implements the Synthesizer trait
 // ---------------------------------------------------------------------------
 
-/// The constructor doesn't validate the API key — that happens at call time.
-/// An empty key should construct fine (it will fail when `synthesize()` is called).
+/// Compile-test: if the `Synthesizer` trait impl is broken (wrong signature,
+/// missing `#[async_trait]`, etc.) this function will fail to compile.
 #[test]
-fn test_rig_synthesizer_empty_api_key_constructs() {
-    let result = RigSynthesizer::claude("", "claude-haiku-4-5-20251001", 4096);
-    assert!(
-        result.is_ok(),
-        "Empty API key should still construct (fails at call time)"
-    );
-}
+fn test_rig_synthesizer_implements_trait() {
+    fn takes_synthesizer(_: Box<dyn Synthesizer>) {}
 
-// ===========================================================================
-// Integration Tests — require ANTHROPIC_API_KEY
-// ===========================================================================
-
-// ---------------------------------------------------------------------------
-// Test 3: Synthesize returns a non-empty answer
-// ---------------------------------------------------------------------------
-
-/// ## Integration test: Full synthesis pipeline
-///
-/// Sends a simple context + question to Claude and verifies we get a
-/// non-empty answer back.
-///
-/// Requires: ANTHROPIC_API_KEY env var
-#[tokio::test]
-#[ignore]
-async fn test_synthesize_returns_answer() {
-    let synthesizer = create_test_synthesizer();
-
-    let context = AssembledContext {
-        system_prompt: "You are a legal analyst. Answer based only on the provided evidence. \
-                        Be concise — respond in one sentence."
-            .to_string(),
-        formatted_context: "Evidence: Phillips testified that Emil Awad requested the return \
-                           of $50,000 on multiple occasions."
-            .to_string(),
-        token_estimate: 50,
-    };
-
-    let result = synthesizer
-        .synthesize(&context, "What did Phillips say about the $50,000?")
-        .await
-        .expect("Synthesis should succeed");
-
-    assert!(
-        !result.answer.is_empty(),
-        "Answer should not be empty"
-    );
-
-    println!("\n  === RigSynthesizer Result ===");
-    println!("  Answer: {}", result.answer);
-    println!("  Input tokens: {}", result.input_tokens);
-    println!("  Output tokens: {}", result.output_tokens);
-    println!("  Provider: {}", result.provider);
-    println!("  Model: {}", result.model);
+    let synth = make_synthesizer(Ok(LlmResponse {
+        text: "ok".into(),
+        input_tokens: None,
+        output_tokens: None,
+    }));
+    takes_synthesizer(Box::new(synth));
 }
 
 // ---------------------------------------------------------------------------
-// Test 4: Token counts are non-zero
+// Test 3: Provider errors surface as RagError::SynthesisError
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore]
-async fn test_synthesize_token_counts() {
-    let synthesizer = create_test_synthesizer();
+async fn test_synthesize_propagates_provider_error() {
+    let synth = make_synthesizer(Err("test".into()));
+    let ctx = test_context();
 
-    let context = AssembledContext {
-        system_prompt: "You are a helpful assistant. Be very concise.".to_string(),
-        formatted_context: "The sky is blue.".to_string(),
-        token_estimate: 10,
-    };
-
-    let result = synthesizer
-        .synthesize(&context, "What color is the sky?")
-        .await
-        .expect("Synthesis should succeed");
+    let result = synth.synthesize(&ctx, "Anything?").await;
 
     assert!(
-        result.input_tokens > 0,
-        "Input tokens should be > 0, got {}",
-        result.input_tokens
+        matches!(result, Err(RagError::SynthesisError(_))),
+        "Expected SynthesisError, got {:?}",
+        result
     );
-    assert!(
-        result.output_tokens > 0,
-        "Output tokens should be > 0, got {}",
-        result.output_tokens
-    );
-
-    println!("\n  === Token Counts ===");
-    println!("  Input tokens:  {}", result.input_tokens);
-    println!("  Output tokens: {}", result.output_tokens);
 }
 
 // ---------------------------------------------------------------------------
-// Test 5: Provider and model fields are correct
+// Test 4: Empty LLM text produces SynthesisError
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore]
-async fn test_synthesize_provider_and_model() {
-    let synthesizer = create_test_synthesizer();
+async fn test_synthesize_empty_response_is_error() {
+    let synth = make_synthesizer(Ok(LlmResponse {
+        text: "".into(),
+        input_tokens: None,
+        output_tokens: None,
+    }));
 
-    let context = AssembledContext {
-        system_prompt: "Be concise.".to_string(),
-        formatted_context: "Test context.".to_string(),
-        token_estimate: 5,
-    };
+    let result = synth.synthesize(&test_context(), "Anything?").await;
 
-    let result = synthesizer
-        .synthesize(&context, "Say hello")
+    assert!(
+        matches!(result, Err(RagError::SynthesisError(_))),
+        "Expected SynthesisError for empty text, got {:?}",
+        result
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test 5: Successful invoke populates all SynthesisResult fields
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_synthesize_success_populates_fields() {
+    let provider = Arc::new(TestLlmProvider::new_ok(LlmResponse {
+        text: "hello".into(),
+        input_tokens: Some(10),
+        output_tokens: Some(5),
+    }));
+
+    let synth = RigSynthesizer::new(provider.clone(), 256);
+
+    let result = synth
+        .synthesize(&test_context(), "What is the test?")
         .await
         .expect("Synthesis should succeed");
 
+    assert_eq!(result.answer, "hello");
+    assert_eq!(result.input_tokens, 10);
+    assert_eq!(result.output_tokens, 5);
+    assert_eq!(result.model, "test-model");
+    assert_eq!(result.provider, "test-provider");
+    assert!(result.citations.is_empty());
+
+    // Interaction assertions — prove the synthesizer uses invoke_with_system,
+    // not invoke directly with a concatenated prompt. Regression guard for
+    // P3-1-Followup's behavior change.
     assert_eq!(
-        result.provider, "anthropic",
-        "Provider should be 'anthropic'"
+        provider.invoke_call_count(),
+        0,
+        "invoke() should not be called — synthesize() must go through invoke_with_system()"
     );
-
-    let expected_model = get_test_model_id();
     assert_eq!(
-        result.model, expected_model,
-        "Model should match configured model ID"
+        provider.invoke_with_system_call_count(),
+        1,
+        "invoke_with_system() must be called exactly once per synthesize()"
+    );
+
+    let (captured_system, captured_prompt) = provider
+        .last_invoke_with_system_args()
+        .expect("invoke_with_system must have been called");
+
+    // System prompt should match the context's system_prompt verbatim.
+    assert_eq!(
+        captured_system, "You are a test assistant.",
+        "system prompt must pass through unchanged to the provider"
+    );
+
+    // User prompt should contain the question and context, but NOT the system.
+    assert!(
+        captured_prompt.contains("Test context"),
+        "user prompt should include formatted_context"
+    );
+    assert!(
+        captured_prompt.contains("What is the test?"),
+        "user prompt should include the question"
+    );
+    assert!(
+        !captured_prompt.contains("You are a test assistant."),
+        "system prompt must NOT be concatenated into the user prompt"
     );
 }
 
-// ===========================================================================
-// Test helpers
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Test 6: Missing token counts default to zero
+// ---------------------------------------------------------------------------
 
-/// Get the model ID for tests. Uses ANTHROPIC_MODEL env var or defaults
-/// to a known-good cheap model.
-fn get_test_model_id() -> String {
-    std::env::var("ANTHROPIC_MODEL")
-        .unwrap_or_else(|_| "claude-haiku-4-5-20251001".to_string())
+#[tokio::test]
+async fn test_synthesize_none_tokens_default_to_zero() {
+    let synth = make_synthesizer(Ok(LlmResponse {
+        text: "hi".into(),
+        input_tokens: None,
+        output_tokens: None,
+    }));
+
+    let result = synth
+        .synthesize(&test_context(), "Say hi")
+        .await
+        .expect("Synthesis should succeed");
+
+    assert_eq!(result.input_tokens, 0);
+    assert_eq!(result.output_tokens, 0);
 }
 
-/// Create a RigSynthesizer configured for integration tests.
+// ---------------------------------------------------------------------------
+// Test 7: Standalone interaction guard — synthesize() uses invoke_with_system
+// ---------------------------------------------------------------------------
+
+/// Explicitly verifies that RigSynthesizer uses invoke_with_system, not invoke.
 ///
-/// Uses ANTHROPIC_API_KEY from environment and a cheap model to minimize cost.
-/// max_tokens = 128 keeps responses short and fast.
-fn create_test_synthesizer() -> RigSynthesizer {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .expect("ANTHROPIC_API_KEY must be set for integration tests");
-    let model_id = get_test_model_id();
+/// This is a regression guard for P3-1-Followup's behavior change. If someone
+/// reverts synthesize() to call invoke() with a concatenated prompt, this test
+/// fails immediately with a clear reason, not with a mysterious assertion on
+/// a captured-prompt field buried in a larger test.
+#[tokio::test]
+async fn synthesize_uses_invoke_with_system_not_invoke() {
+    let provider = Arc::new(TestLlmProvider::new_ok(LlmResponse {
+        text: "x".into(),
+        input_tokens: None,
+        output_tokens: None,
+    }));
 
-    RigSynthesizer::claude(&api_key, &model_id, 128)
-        .expect("Failed to create RigSynthesizer")
+    let synth = RigSynthesizer::new(provider.clone(), 1000);
+    let _ = synth.synthesize(&test_context(), "q").await.unwrap();
+
+    assert_eq!(provider.invoke_call_count(), 0);
+    assert_eq!(provider.invoke_with_system_call_count(), 1);
 }
+
+// Integration tests (real Anthropic API calls) removed in P3-1. Equivalent
+// coverage exists in colossus-extract/tests/ where AnthropicProvider is
+// tested directly. If we decide end-to-end synthesis integration tests
+// are needed at the colossus-rag layer, open a new task.

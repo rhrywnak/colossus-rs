@@ -45,13 +45,12 @@
 //!
 //! | Feature | Description | Status |
 //! |---------|-------------|--------|
-//! | `qdrant` | Qdrant vector search via gRPC | T-R.2.1 |
-//! | `fastembed` | Local embeddings via rig-fastembed | T-R.2.1 |
+//! | `qdrant` | Qdrant vector search via gRPC; embedding backend injected at runtime via `Arc<dyn EmbeddingProvider>` | T-R.2.1 |
 //! | `neo4j` | Enables GraphExpander with Neo4j | T-R.3.1 |
 //! | `axum` | Enables Axum handler integration | Planned |
 //! | `full` | Enables all features | Available |
 //!
-//! Enable both `qdrant` and `fastembed` (or just `full`) to get `QdrantRetriever`.
+//! Enable `qdrant` (or `full`) to get `QdrantRetriever`.
 //!
 //! ## Rust Learning: Crate organization
 //!
@@ -74,17 +73,14 @@ mod types;
 
 // --- Feature-gated modules ---
 
-// ## Rust Learning: `#[cfg(all(...))]` for multi-feature gates
-//
-// The retriever module requires BOTH the `qdrant` and `fastembed` features
-// because it uses qdrant-client for search AND rig-fastembed for embedding.
-// `#[cfg(all(feature = "a", feature = "b"))]` means "compile this only
-// when both features are enabled."
-#[cfg(all(feature = "qdrant", feature = "fastembed"))]
+// Retriever requires qdrant-client for vector search. The embedding provider
+// is injected at runtime via Arc<dyn EmbeddingProvider>, so this module has
+// no compile-time dependency on any specific embedding backend.
+#[cfg(feature = "qdrant")]
 mod retriever;
 
-// The embedding reranker requires only fastembed (no Qdrant needed).
-#[cfg(feature = "fastembed")]
+// Reranker uses the EmbeddingProvider trait + cosine similarity math.
+// No external crate dependency — always available.
 mod reranker;
 
 // The Neo4j expander module requires the `neo4j` feature.
@@ -92,13 +88,13 @@ mod reranker;
 // - expander.rs: struct, trait impl, helpers, conversion
 // - expander_queries.rs: 7 per-type Cypher expansion functions
 #[cfg(feature = "neo4j")]
-mod expansion_category;
-#[cfg(feature = "neo4j")]
 mod expander;
 #[cfg(feature = "neo4j")]
 mod expander_queries;
 #[cfg(feature = "neo4j")]
 mod expander_queries_minor;
+#[cfg(feature = "neo4j")]
+mod expansion_category;
 #[cfg(feature = "neo4j")]
 mod graph_retriever;
 
@@ -110,24 +106,6 @@ mod pipeline;
 mod pipeline_helpers;
 mod router;
 mod synthesizer;
-
-// ## Rust Learning: `compile_error!` for helpful diagnostics
-//
-// If someone enables only ONE of the two required features, they'd get
-// confusing "type not found" errors. Instead, we detect the mismatch at
-// compile time and produce a clear error message explaining what's needed.
-//
-// `any(...)` matches if EITHER feature is on.
-// `not(all(...))` matches if BOTH are NOT on simultaneously.
-// Together: "one is on but not both" → helpful error.
-#[cfg(any(
-    all(feature = "qdrant", not(feature = "fastembed")),
-    all(feature = "fastembed", not(feature = "qdrant")),
-))]
-compile_error!(
-    "QdrantRetriever requires both `qdrant` and `fastembed` features. \
-     Enable both: features = [\"qdrant\", \"fastembed\"] or features = [\"full\"]"
-);
 
 // --- Public API re-exports: Error ---
 
@@ -153,7 +131,7 @@ pub use noop::{NoOpDecomposer, NoOpExpander, NoOpRouter};
 
 // --- Public API re-exports: Feature-gated implementations ---
 
-#[cfg(all(feature = "qdrant", feature = "fastembed"))]
+#[cfg(feature = "qdrant")]
 pub use retriever::{scope_filters_to_qdrant_filter, QdrantRetriever};
 
 #[cfg(feature = "neo4j")]
@@ -162,7 +140,6 @@ pub use expander::Neo4jExpander;
 #[cfg(feature = "neo4j")]
 pub use graph_retriever::GraphDirectRetriever;
 
-#[cfg(feature = "fastembed")]
 pub use reranker::EmbeddingReranker;
 
 pub use assembler::{estimate_tokens, format_chunk, LegalAssembler};

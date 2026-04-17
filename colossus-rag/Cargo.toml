@@ -8,6 +8,7 @@ description = "RAG pipeline library for Colossus applications — types, traits,
 
 [dependencies]
 async-trait = "0.1"
+colossus-extract = { path = "../colossus-extract" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = "2"
@@ -22,10 +23,6 @@ rig-core = "0.33"
 
 # --- Optional dependencies (behind feature flags) ---
 
-# rig-fastembed: local ONNX-based embedding (nomic-embed-text v1.5).
-# Wraps the fastembed crate behind Rig's EmbeddingModel trait.
-rig-fastembed = { version = "0.3", optional = true }
-
 # qdrant-client: gRPC client for Qdrant vector database.
 # We use this directly (NOT rig-qdrant) for full control over
 # search parameters, payload access, and filter construction.
@@ -39,6 +36,11 @@ neo4rs = { version = "0.8", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+# Direct fastembed dep (P3-3): retriever integration tests construct a
+# colossus_extract::FastembedProvider, whose constructor takes a
+# fastembed::EmbeddingModel enum variant. Pinned to "4" to match
+# colossus-extract's own pin.
+fastembed = "4"
 
 # --- Feature flags ---
 #
@@ -47,8 +49,7 @@ tokio = { workspace = true }
 
 [features]
 default = []
-qdrant = ["dep:qdrant-client"]     # T-R.2.1: Qdrant vector search via gRPC
-fastembed = ["dep:rig-fastembed"]   # T-R.2.1: Local embeddings via rig-fastembed
-neo4j = ["dep:neo4rs"]               # T-R.3: GraphExpander backed by Neo4j
-axum = []                           # Future: Axum handler integration (placeholder)
-full = ["neo4j", "fastembed", "qdrant", "axum"]
+qdrant = ["dep:qdrant-client"]     # Qdrant vector search via gRPC
+neo4j = ["dep:neo4rs"]              # GraphExpander backed by Neo4j
+axum = []                          # Future: Axum handler integration (placeholder)
+full = ["neo4j", "qdrant", "axum"]
