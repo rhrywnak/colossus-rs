@@ -8,6 +8,7 @@ description = "RAG pipeline library for Colossus applications — types, traits,
 
 [dependencies]
 async-trait = "0.1"
+colossus-extract = { path = "../colossus-extract" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = "2"
