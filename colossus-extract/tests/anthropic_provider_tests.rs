@@ -67,6 +67,18 @@ fn supports_structured_output_returns_true() {
     assert!(provider.supports_structured_output());
 }
 
+/// Verifies that `provider_name()` returns the canonical lowercase `"anthropic"`.
+///
+/// This is the string consumers use to group metrics and costs by backend.
+/// Drift here (e.g., `"Anthropic"` or `"anthropic-api"`) would silently break
+/// downstream aggregation queries that filter on `provider_name`.
+#[test]
+fn provider_name_returns_anthropic() {
+    let provider =
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096).unwrap();
+    assert_eq!(provider.provider_name(), "anthropic");
+}
+
 /// Verifies that the constructor succeeds with valid inputs.
 ///
 /// This test confirms that `reqwest::Client::builder()` builds successfully in

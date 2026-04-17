@@ -170,33 +170,23 @@ impl AnthropicProvider {
     pub fn max_tokens_default(&self) -> u32 {
         self.max_tokens_default
     }
-}
 
-#[async_trait]
-impl LlmProvider for AnthropicProvider {
-    /// Send a prompt to the Anthropic Messages API and return the raw text response.
+    /// POST a prebuilt request body to the Anthropic Messages API and parse
+    /// the text response.
     ///
-    /// Builds a Messages API request with `temperature: 0.0` (deterministic output
-    /// for extraction). No system prompt is injected — prompt engineering is the
-    /// caller's concern per the `LlmProvider` trait contract.
+    /// Private transport helper shared by `invoke()` and `invoke_with_system()`.
+    /// Centralizes HTTP, rate-limit, overload, and response-parsing logic so a
+    /// future change to error handling or token extraction lands in one place
+    /// instead of being duplicated across every trait method that sends a prompt.
     ///
-    /// Multi-block responses are concatenated: Anthropic may return multiple text
-    /// blocks for long responses. Non-text blocks (tool_use) are ignored because
-    /// this provider is for text extraction, not tool-calling.
+    /// The caller builds the request body — the helper is agnostic to whether
+    /// the body carries a top-level `system` field, a tool_use block, or just
+    /// `messages` — and receives back a parsed `LlmResponse` or a typed error.
     ///
     /// # Errors
     ///
-    /// See module-level error taxonomy. Returns typed errors that the caller
-    /// (LlmExtract step) can match on for retry decisions.
-    async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError> {
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "messages": [{"role": "user", "content": prompt}]
-        });
-
-        // POST to Anthropic Messages API
+    /// See module-level error taxonomy.
+    async fn post_and_parse(&self, body: serde_json::Value) -> Result<LlmResponse, PipelineError> {
         let response = self
             .http_client
             .post(ANTHROPIC_API_URL)
@@ -292,6 +282,66 @@ impl LlmProvider for AnthropicProvider {
             input_tokens: parsed.usage.as_ref().map(|u| u.input_tokens),
             output_tokens: parsed.usage.as_ref().map(|u| u.output_tokens),
         })
+    }
+}
+
+#[async_trait]
+impl LlmProvider for AnthropicProvider {
+    /// Send a prompt to the Anthropic Messages API and return the raw text response.
+    ///
+    /// Builds a Messages API request with `temperature: 0.0` (deterministic output
+    /// for extraction). No system prompt is injected — prompt engineering is the
+    /// caller's concern per the `LlmProvider` trait contract.
+    ///
+    /// Multi-block responses are concatenated: Anthropic may return multiple text
+    /// blocks for long responses. Non-text blocks (tool_use) are ignored because
+    /// this provider is for text extraction, not tool-calling.
+    ///
+    /// # Errors
+    ///
+    /// See module-level error taxonomy. Returns typed errors that the caller
+    /// (LlmExtract step) can match on for retry decisions.
+    async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "messages": [{"role": "user", "content": prompt}]
+        });
+        self.post_and_parse(body).await
+    }
+
+    /// Send a prompt with a separate system prompt via Anthropic's native
+    /// top-level `system` field.
+    ///
+    /// The Anthropic Messages API treats the `system` field as a distinct
+    /// instruction layer — concatenating system + user content into a single
+    /// user message loses that distinction and has measurable quality impact
+    /// on instruction-following tasks (synthesis, decomposition).
+    ///
+    /// # Errors
+    ///
+    /// Same taxonomy as `invoke()` — all HTTP, rate-limit, overload, and
+    /// parsing errors are funneled through the shared `post_and_parse` helper.
+    async fn invoke_with_system(
+        &self,
+        system: &str,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<LlmResponse, PipelineError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "system": system,
+            "messages": [{"role": "user", "content": prompt}]
+        });
+        self.post_and_parse(body).await
+    }
+
+    /// Returns `"anthropic"` — the canonical lowercase backend identifier.
+    fn provider_name(&self) -> &str {
+        "anthropic"
     }
 
     /// Returns the model identifier passed to the constructor.

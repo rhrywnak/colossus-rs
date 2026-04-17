@@ -87,6 +87,23 @@ fn supports_structured_output_returns_false() {
     assert!(!provider.supports_structured_output());
 }
 
+/// Verifies that `provider_name()` returns the canonical lowercase `"vllm"`.
+///
+/// This is the string consumers use to group metrics and costs by backend.
+/// Drift here (e.g., `"vLLM"` or `"openai-compat"`) would silently break
+/// downstream aggregation queries that filter on `provider_name`.
+#[test]
+fn provider_name_returns_vllm() {
+    let provider = VllmProvider::new(
+        "http://localhost:8000".into(),
+        "llama-3-8b".into(),
+        None,
+        2048,
+    )
+    .unwrap();
+    assert_eq!(provider.provider_name(), "vllm");
+}
+
 /// Verifies that the constructor succeeds with valid inputs.
 ///
 /// This test confirms that `reqwest::Client::builder()` builds successfully and

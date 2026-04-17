@@ -89,6 +89,61 @@ async fn embedding_provider_default_batch_works() {
     assert_eq!(result[1], vec![1.0_f32, 2.0, 3.0]);
 }
 
+/// Verifies that the default `invoke_with_system()` implementation concatenates
+/// system + prompt with a blank line separator and delegates to `invoke()`.
+///
+/// Without this test, a future change to the default method body could silently
+/// break every provider that relies on it (any provider without a native
+/// system-prompt field). The test uses a trivial `CapturingLlm` that records
+/// the prompt it received, so failures point to the default implementation
+/// logic, not to any concrete provider.
+#[tokio::test]
+async fn llm_provider_default_invoke_with_system_concatenates() {
+    use std::sync::Mutex;
+
+    struct CapturingLlm {
+        last_prompt: Mutex<String>,
+    }
+
+    #[async_trait]
+    impl LlmProvider for CapturingLlm {
+        async fn invoke(
+            &self,
+            prompt: &str,
+            _max_tokens: u32,
+        ) -> Result<LlmResponse, PipelineError> {
+            *self.last_prompt.lock().unwrap() = prompt.to_string();
+            Ok(LlmResponse {
+                text: "ok".to_string(),
+                input_tokens: None,
+                output_tokens: None,
+            })
+        }
+        fn provider_name(&self) -> &str {
+            "capturing"
+        }
+        fn model_name(&self) -> &str {
+            "test"
+        }
+        fn cost_per_input_token(&self) -> Option<f64> {
+            None
+        }
+        fn cost_per_output_token(&self) -> Option<f64> {
+            None
+        }
+        fn supports_structured_output(&self) -> bool {
+            false
+        }
+    }
+
+    let llm = CapturingLlm {
+        last_prompt: Mutex::new(String::new()),
+    };
+    let _ = llm.invoke_with_system("SYSTEM", "USER", 100).await.unwrap();
+    let captured = llm.last_prompt.lock().unwrap().clone();
+    assert_eq!(captured, "SYSTEM\n\nUSER");
+}
+
 /// Verifies the exact JSON field names produced by serializing `LlmResponse`.
 ///
 /// This locks in the wire format. Any accidental rename of a struct field
