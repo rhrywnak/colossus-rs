@@ -1,14 +1,18 @@
-//! QdrantRetriever — implements [`VectorRetriever`] using rig-fastembed + qdrant-client.
+//! QdrantRetriever — implements [`VectorRetriever`] using an [`EmbeddingProvider`] + qdrant-client.
 //!
 //! This module provides the first real implementation of the RAG retriever stage.
 //! It replaces two hand-rolled services from colossus-legal:
 //! - `embedding_service.rs` (~130 lines) — embedded text via fastembed directly
 //! - `qdrant_service.rs` (~120 lines) — searched Qdrant via raw HTTP/reqwest
 //!
-//! ## Architecture: Why rig-fastembed + qdrant-client (not rig-qdrant)?
+//! ## Architecture: Why EmbeddingProvider + qdrant-client (not rig-qdrant)?
 //!
-//! We use **rig-fastembed** for embedding queries (wraps fastembed behind Rig's
-//! `EmbeddingModel` trait) and **qdrant-client** directly for vector search.
+//! We depend on colossus-extract's [`EmbeddingProvider`] trait for embedding
+//! queries and **qdrant-client** directly for vector search. The trait
+//! abstraction lets us swap embedding backends (FastembedProvider,
+//! VllmEmbeddingProvider, or any future implementation) without touching the
+//! retriever — provider selection happens at construction time via an
+//! `Arc<dyn EmbeddingProvider>`.
 //!
 //! We chose NOT to use rig-qdrant's `QdrantVectorStore` because:
 //! 1. rig-qdrant's `VectorStoreIndex::top_n()` returns payloads as generic `T`,
@@ -28,27 +32,16 @@
 //! If a consumer doesn't enable both features, this module doesn't exist in the
 //! compiled binary — zero cost. The `#[cfg]` gate is in `lib.rs`, not here.
 //!
-//! ## Rig Concept: EmbeddingModel trait
-//!
-//! `rig::embeddings::EmbeddingModel` defines `embed_text(&self, text) -> Result<Embedding, _>`.
-//! An `Embedding` contains `vec: Vec<f64>` — note f64, not f32. Rig uses f64 internally
-//! even though fastembed produces f32. We convert back to f32 for Qdrant's search API.
+//! [`EmbeddingProvider`]: colossus_extract::EmbeddingProvider
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
-/// ## Rust Learning: Re-importing the trait to call its methods
-///
-/// We need `rig::embeddings::EmbeddingModel` in scope to call `.embed_text()`
-/// on the concrete fastembed model. Without this import, Rust can't resolve
-/// the method — even though the concrete type implements the trait.
-use rig::embeddings::EmbeddingModel;
+use colossus_extract::EmbeddingProvider;
 
-use qdrant_client::qdrant::{
-    value::Kind, Condition, Filter, ScoredPoint, SearchPointsBuilder,
-};
+use qdrant_client::qdrant::{value::Kind, Condition, Filter, ScoredPoint, SearchPointsBuilder};
 use qdrant_client::Qdrant;
 
 use crate::error::RagError;
@@ -61,36 +54,34 @@ use crate::types::{ContextChunk, ScopeFilter, ScopeFilterType, SourceReference};
 
 /// Searches Qdrant for context chunks relevant to a query.
 ///
-/// Combines rig-fastembed for embedding with qdrant-client for vector search.
-/// This is the concrete implementation of [`VectorRetriever`] for use with
-/// a Qdrant vector database and local ONNX-based embeddings.
+/// Combines an [`EmbeddingProvider`] for query embedding with qdrant-client
+/// for vector search. This is the concrete implementation of [`VectorRetriever`]
+/// for use with a Qdrant vector database and any provider-backed embedding
+/// backend (local ONNX via FastembedProvider, remote vLLM, etc.).
 ///
 /// ## Rust Learning: `Arc` for shared ownership
 ///
-/// Both `embedding_model` and `qdrant_client` are wrapped in `Arc` (Atomic
+/// Both `embedding_provider` and `qdrant_client` are wrapped in `Arc` (Atomic
 /// Reference Counted pointer). This lets multiple parts of the application
-/// share the same model/client without cloning the heavy inner data.
+/// share the same provider/client without cloning the heavy inner data.
 ///
 /// `Arc<T>` is `Clone + Send + Sync` when `T` is `Send + Sync`, which means
 /// it's safe to share across async tasks and threads — exactly what Axum
 /// needs for handler state.
 ///
-/// ## Rust Learning: Concrete type vs `dyn Trait`
+/// ## Rust Learning: `Arc<dyn EmbeddingProvider>` — trait object dispatch
 ///
-/// We store the embedding model as a concrete `rig_fastembed::EmbeddingModel`
-/// rather than `dyn rig::embeddings::EmbeddingModel`. Why?
-///
-/// Rig's `EmbeddingModel` trait has generic methods (like `embed_text` which
-/// returns `impl Future`), making it NOT dyn-compatible. You can't create
-/// `Box<dyn EmbeddingModel>`. So we use the concrete type directly.
-///
-/// If we needed to support multiple embedding providers, we'd make
-/// `QdrantRetriever` generic: `QdrantRetriever<E: EmbeddingModel>`.
-/// But for now, fastembed is our only provider, so concrete is simpler.
+/// We store the embedding backend as `Arc<dyn EmbeddingProvider>` (dynamic
+/// dispatch) rather than a concrete type or generic parameter. The
+/// `EmbeddingProvider` trait is explicitly designed to be object-safe
+/// (verified in colossus-extract by the `embedding_provider_is_object_safe`
+/// test), so `dyn EmbeddingProvider` is valid. This keeps `QdrantRetriever`
+/// monomorphization-free and lets callers swap providers at runtime via
+/// environment configuration.
 pub struct QdrantRetriever {
-    /// The fastembed embedding model (nomic-embed-text v1.5).
-    /// Shared via Arc because model initialization is expensive (~100MB ONNX download).
-    embedding_model: Arc<rig_fastembed::EmbeddingModel>,
+    /// The embedding backend used to vectorize queries. Shared via Arc so
+    /// the same provider instance can back many retrievers / handlers.
+    embedding_provider: Arc<dyn EmbeddingProvider>,
 
     /// The Qdrant gRPC client. Shared via Arc for reuse across requests.
     qdrant_client: Arc<Qdrant>,
@@ -108,18 +99,19 @@ impl QdrantRetriever {
     /// Create a new QdrantRetriever.
     ///
     /// ## Parameters
-    /// - `embedding_model`: A rig-fastembed model (e.g., NomicEmbedTextV15)
+    /// - `embedding_provider`: Any `Arc<dyn EmbeddingProvider>` implementation
+    ///   (FastembedProvider for local ONNX, VllmEmbeddingProvider for remote, etc.)
     /// - `qdrant_client`: A connected Qdrant gRPC client (port 6334)
     /// - `collection_name`: The Qdrant collection to search
     /// - `default_score_threshold`: Minimum cosine similarity score (0.0–1.0)
     pub fn new(
-        embedding_model: Arc<rig_fastembed::EmbeddingModel>,
+        embedding_provider: Arc<dyn EmbeddingProvider>,
         qdrant_client: Arc<Qdrant>,
         collection_name: impl Into<String>,
         default_score_threshold: f32,
     ) -> Self {
         Self {
-            embedding_model,
+            embedding_provider,
             qdrant_client,
             collection_name: collection_name.into(),
             default_score_threshold,
@@ -136,11 +128,10 @@ impl VectorRetriever for QdrantRetriever {
     /// Embed the query, search Qdrant, and return matching context chunks.
     ///
     /// ## Flow
-    /// 1. Embed the query text using rig-fastembed → `Vec<f64>`
-    /// 2. Convert `f64` → `f32` (Qdrant uses f32 vectors)
-    /// 3. Convert `ScopeFilter` slice → optional Qdrant `Filter`
-    /// 4. Build and execute `SearchPoints` request
-    /// 5. Map each `ScoredPoint` → `ContextChunk`
+    /// 1. Embed the query text via [`EmbeddingProvider`] → `Vec<f32>`
+    /// 2. Convert `ScopeFilter` slice → optional Qdrant `Filter`
+    /// 3. Build and execute `SearchPoints` request
+    /// 4. Map each `ScoredPoint` → `ContextChunk`
     async fn search(
         &self,
         query: &str,
@@ -149,28 +140,20 @@ impl VectorRetriever for QdrantRetriever {
     ) -> Result<Vec<ContextChunk>, RagError> {
         // --- Step 1: Embed the query text ---
         //
-        // ## Rig Concept: embed_text() returns Embedding { vec: Vec<f64> }
-        //
-        // rig-fastembed runs ONNX inference on the CPU synchronously, but wraps
-        // it in an async interface for consistency with remote embedding providers.
-        let embedding = self
-            .embedding_model
-            .embed_text(query)
+        // EmbeddingProvider::embed() returns Vec<f32> directly — no conversion
+        // needed. Provider implementations (FastembedProvider, VllmEmbeddingProvider)
+        // handle the specific backend details (ONNX inference, remote HTTP, etc.)
+        // internally.
+        let vector_f32 = self
+            .embedding_provider
+            .embed(query)
             .await
             .map_err(|e| RagError::EmbeddingError(e.to_string()))?;
 
-        // --- Step 2: Convert f64 → f32 ---
-        //
-        // Rig internally uses f64 for embedding vectors, but Qdrant's gRPC API
-        // expects f32. The precision loss is negligible for similarity search —
-        // cosine similarity is scale-invariant, and the 7 significant digits of
-        // f32 are more than enough for ranking.
-        let vector_f32: Vec<f32> = embedding.vec.iter().map(|&v| v as f32).collect();
-
-        // --- Step 3: Build Qdrant filter from ScopeFilters ---
+        // --- Step 2: Build Qdrant filter from ScopeFilters ---
         let qdrant_filter = scope_filters_to_qdrant_filter(filters);
 
-        // --- Step 4: Build and execute SearchPoints ---
+        // --- Step 3: Build and execute SearchPoints ---
         //
         // ## Rig Concept: SearchPointsBuilder
         //
@@ -181,13 +164,10 @@ impl VectorRetriever for QdrantRetriever {
         //
         // `.with_payload(true)` tells Qdrant to return all payload fields with
         // each result. Without this, we'd only get point IDs and scores.
-        let mut search_builder = SearchPointsBuilder::new(
-            &self.collection_name,
-            vector_f32,
-            limit as u64,
-        )
-        .with_payload(true)
-        .score_threshold(self.default_score_threshold);
+        let mut search_builder =
+            SearchPointsBuilder::new(&self.collection_name, vector_f32, limit as u64)
+                .with_payload(true)
+                .score_threshold(self.default_score_threshold);
 
         if let Some(filter) = qdrant_filter {
             search_builder = search_builder.filter(filter);
@@ -199,7 +179,7 @@ impl VectorRetriever for QdrantRetriever {
             .await
             .map_err(|e| RagError::SearchError(e.to_string()))?;
 
-        // --- Step 5: Map ScoredPoints → ContextChunks ---
+        // --- Step 4: Map ScoredPoints → ContextChunks ---
         let chunks: Vec<ContextChunk> = search_response
             .result
             .into_iter()
@@ -250,17 +230,11 @@ pub fn scope_filters_to_qdrant_filter(filters: &[ScopeFilter]) -> Option<Filter>
         match filter.filter_type {
             ScopeFilterType::Document => {
                 // Match points where payload "document_id" equals the filter value.
-                conditions.push(Condition::matches(
-                    "document_id",
-                    filter.value.clone(),
-                ));
+                conditions.push(Condition::matches("document_id", filter.value.clone()));
             }
             ScopeFilterType::NodeType => {
                 // Match points where payload "node_type" equals the filter value.
-                conditions.push(Condition::matches(
-                    "node_type",
-                    filter.value.clone(),
-                ));
+                conditions.push(Condition::matches("node_type", filter.value.clone()));
             }
             ScopeFilterType::Person => {
                 // No "person" field in Qdrant payloads — skip with a warning.
@@ -375,7 +349,11 @@ fn extract_optional_string(
     key: &str,
 ) -> Option<String> {
     let value = extract_string(payload, key);
-    if value.is_empty() { None } else { Some(value) }
+    if value.is_empty() {
+        None
+    } else {
+        Some(value)
+    }
 }
 
 /// Extract an optional u32 from a Qdrant protobuf payload.

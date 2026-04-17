@@ -40,6 +40,11 @@ neo4rs = { version = "0.8", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+# Direct fastembed dep (P3-3): retriever integration tests construct a
+# colossus_extract::FastembedProvider, whose constructor takes a
+# fastembed::EmbeddingModel enum variant. Pinned to "4" to match
+# colossus-extract's own pin.
+fastembed = "4"
 
 # --- Feature flags ---
 #
