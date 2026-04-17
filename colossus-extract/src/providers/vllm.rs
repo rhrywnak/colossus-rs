@@ -187,29 +187,23 @@ impl VllmProvider {
     pub fn max_tokens_default(&self) -> u32 {
         self.max_tokens_default
     }
-}
 
-#[async_trait]
-impl LlmProvider for VllmProvider {
-    /// Send a prompt to the vLLM Chat Completions endpoint and return the text response.
+    /// POST a prebuilt request body to the vLLM Chat Completions endpoint and
+    /// parse the text response.
     ///
-    /// Builds a request matching the OpenAI Chat Completions API with
-    /// `temperature: 0.0` (deterministic output for extraction). No system prompt
-    /// is injected — prompt engineering is the caller's concern per the
-    /// `LlmProvider` trait contract.
+    /// Private transport helper shared by `invoke()` and `invoke_with_system()`.
+    /// Centralizes URL construction, conditional bearer-auth, rate-limit,
+    /// validation-error handling, and response parsing so a future change to
+    /// (for example) `finish_reason` handling lands in one place instead of
+    /// being duplicated across every trait method that sends a prompt.
+    ///
+    /// The caller builds the request body — the helper does not care whether
+    /// `messages` contains a single user entry or a system + user pair.
     ///
     /// # Errors
     ///
-    /// See module-level error taxonomy. Returns typed errors that the caller
-    /// (LlmExtract step) can match on for retry decisions.
-    async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError> {
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "messages": [{"role": "user", "content": prompt}]
-        });
-
+    /// See module-level error taxonomy.
+    async fn post_and_parse(&self, body: serde_json::Value) -> Result<LlmResponse, PipelineError> {
         let url = format!("{}{CHAT_COMPLETIONS_PATH}", self.base_url);
 
         // Build request, conditionally adding auth header
@@ -305,6 +299,65 @@ impl LlmProvider for VllmProvider {
             input_tokens: parsed.usage.as_ref().map(|u| u.prompt_tokens),
             output_tokens: parsed.usage.as_ref().map(|u| u.completion_tokens),
         })
+    }
+}
+
+#[async_trait]
+impl LlmProvider for VllmProvider {
+    /// Send a prompt to the vLLM Chat Completions endpoint and return the text response.
+    ///
+    /// Builds a request matching the OpenAI Chat Completions API with
+    /// `temperature: 0.0` (deterministic output for extraction). No system prompt
+    /// is injected — prompt engineering is the caller's concern per the
+    /// `LlmProvider` trait contract.
+    ///
+    /// # Errors
+    ///
+    /// See module-level error taxonomy. Returns typed errors that the caller
+    /// (LlmExtract step) can match on for retry decisions.
+    async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "messages": [{"role": "user", "content": prompt}]
+        });
+        self.post_and_parse(body).await
+    }
+
+    /// Send a prompt with a separate system prompt using the OpenAI-compatible
+    /// `role: "system"` first-message convention.
+    ///
+    /// OpenAI-compatible Chat Completions endpoints (including vLLM) treat the
+    /// leading `"system"` message as a distinct instruction layer.
+    /// Concatenating system + user content into a single user message loses
+    /// that distinction.
+    ///
+    /// # Errors
+    ///
+    /// Same taxonomy as `invoke()` — all transport and parsing errors are
+    /// funneled through the shared `post_and_parse` helper.
+    async fn invoke_with_system(
+        &self,
+        system: &str,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<LlmResponse, PipelineError> {
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "temperature": 0.0,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt}
+            ]
+        });
+        self.post_and_parse(body).await
+    }
+
+    /// Returns `"vllm"` — the canonical lowercase backend identifier.
+    fn provider_name(&self) -> &str {
+        "vllm"
     }
 
     /// Returns the model identifier passed to the constructor.
