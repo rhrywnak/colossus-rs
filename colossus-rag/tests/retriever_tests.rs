@@ -19,8 +19,9 @@
 //! fastembed's model cache uses a file lock. Running multiple tests in parallel
 //! causes lock contention. `--test-threads=1` runs tests sequentially, avoiding this.
 
-// These tests only compile when both features are enabled.
-#![cfg(all(feature = "qdrant", feature = "fastembed"))]
+// These tests only compile when the qdrant feature is enabled.
+// Embedding backend is injected at runtime (fastembed dev-dep used in integration tests).
+#![cfg(feature = "qdrant")]
 
 use std::collections::HashMap;
 use std::sync::Arc;
