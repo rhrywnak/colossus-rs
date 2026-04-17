@@ -46,6 +46,69 @@ pub trait LlmProvider: Send + Sync + 'static {
     /// Returns `PipelineError::RateLimited` when the API returns HTTP 429.
     async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError>;
 
+    /// Send a prompt with a separate system prompt, returning a raw text response.
+    ///
+    /// Providers with native system-prompt support (Anthropic Messages API,
+    /// OpenAI-compatible Chat Completions) should override this to use the
+    /// native field. The default implementation concatenates
+    /// `system + "\n\n" + prompt` and delegates to `invoke()`, which is correct
+    /// for any provider that makes no distinction between instruction and
+    /// user content.
+    ///
+    /// ## Rust Learning: Default methods delegating to required methods
+    ///
+    /// Same pattern as `EmbeddingProvider::embed_batch` — a required core method
+    /// (`invoke` / `embed`) supplies behavior for a convenience method whose
+    /// default implementation forwards to it. Providers get the default for
+    /// free; providers with a native implementation override the method.
+    ///
+    /// # When to override
+    ///
+    /// Override when the provider's API treats system content differently from
+    /// user content (e.g., weights instructions more heavily, applies different
+    /// safety filters, or stores system content in a separate API field).
+    /// Failure to override for such providers degrades response quality by
+    /// flattening the instruction/content distinction.
+    ///
+    /// # When the default is correct
+    ///
+    /// Use the default for providers that only accept a single prompt string
+    /// and make no distinction between instruction and content layers.
+    ///
+    /// # Errors
+    ///
+    /// Same taxonomy as `invoke()`. Returns `PipelineError::LlmProvider` for
+    /// network and authentication failures, `PipelineError::RateLimited` for
+    /// HTTP 429.
+    async fn invoke_with_system(
+        &self,
+        system: &str,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<LlmResponse, PipelineError> {
+        let combined = format!("{system}\n\n{prompt}");
+        self.invoke(&combined, max_tokens).await
+    }
+
+    /// Human-readable provider identifier (e.g., `"anthropic"`, `"vllm"`).
+    ///
+    /// Distinct from `model_name()` so metrics, logs, and `pipeline_events`
+    /// records can group by backend regardless of which specific model is in
+    /// use. Consumers aggregating cost or performance by provider need this
+    /// distinction — two different models from the same backend share a
+    /// `provider_name` but not a `model_name`.
+    ///
+    /// Implementations should return a short, stable, lowercase string.
+    /// Conventions in this crate: `"anthropic"`, `"vllm"`.
+    ///
+    /// ## Rust Learning: Why no default
+    ///
+    /// Unlike `invoke_with_system`, this method has no default. Every provider
+    /// has a well-known backend name; a default like `"unknown"` would silently
+    /// hide misconfigured providers and corrupt aggregation queries. Forcing
+    /// each implementation to state the name explicitly prevents drift.
+    fn provider_name(&self) -> &str;
+
     /// Human-readable provider+model identifier (e.g., `"claude-sonnet-4-6"`).
     ///
     /// Used for cost-tracking logs and `pipeline_events` records.
