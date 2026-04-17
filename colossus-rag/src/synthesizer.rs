@@ -5,14 +5,19 @@
 //! abstraction lets us swap between Anthropic, vLLM, or any other
 //! `LlmProvider` implementation without touching the RAG pipeline.
 //!
-//! ## What changed (P3-1)
+//! ## What changed (P3-1 → P3-1-Followup)
 //!
 //! Previously `RigSynthesizer` held a concrete
 //! `rig::providers::anthropic::completion::CompletionModel` and called it
 //! directly, which coupled the RAG pipeline to Rig's Anthropic client. The
-//! struct now holds `Arc<dyn colossus_extract::LlmProvider>` and calls
-//! `invoke()`. The Anthropic-specific code moved to
-//! `colossus_extract::providers::AnthropicProvider` as of colossus-rs v0.10.0.
+//! struct now holds `Arc<dyn colossus_extract::LlmProvider>` and passes the
+//! system prompt and the user content separately via `invoke_with_system()`.
+//! Each provider routes them through its native system-prompt mechanism
+//! (Anthropic's top-level `system` field, OpenAI's `role: "system"` message,
+//! etc.), preserving the system/user distinction the model was trained on.
+//! The Anthropic-specific code lives in
+//! `colossus_extract::providers::AnthropicProvider` as of colossus-rs v0.10.0;
+//! `invoke_with_system()` and `provider_name()` were added in v0.10.1.
 //!
 //! The type keeps the name `RigSynthesizer` to avoid churn in re-exports and
 //! downstream callsites. A rename is a separate future task.
@@ -106,9 +111,10 @@ impl Synthesizer for RigSynthesizer {
     /// Send the assembled context and question to the LLM, return the answer.
     ///
     /// ## Flow
-    /// 1. Concatenate `system_prompt`, `formatted_context`, and `question`
-    ///    into a single prompt string.
-    /// 2. Call `provider.invoke(&prompt, max_tokens)`.
+    /// 1. Format the user message as `Context:\n{...}\n\nQuestion: {...}`.
+    /// 2. Call `provider.invoke_with_system(system_prompt, user_message,
+    ///    max_tokens)` so the provider routes the system content through
+    ///    its native system-prompt channel.
     /// 3. Guard against an empty response.
     /// 4. Build a `SynthesisResult`, defaulting missing token counts to 0.
     async fn synthesize(
@@ -116,25 +122,24 @@ impl Synthesizer for RigSynthesizer {
         context: &AssembledContext,
         question: &str,
     ) -> Result<SynthesisResult, RagError> {
-        // --- Step 1: Build the combined prompt ---
+        // --- Step 1: Format the user message ---
         //
-        // The old code passed `system_prompt` as Rig's "preamble" and the
-        // user message separately, because Rig's Anthropic builder modeled
-        // Anthropic's native `system` / `messages` split. `LlmProvider::invoke()`
-        // takes a single prompt string — each provider implementation is
-        // responsible for any provider-specific framing of system vs user
-        // content. So here we just concatenate with blank-line separators.
+        // System and user content are passed separately to the provider via
+        // `invoke_with_system()`. The provider routes the system content
+        // through its native channel (Anthropic's top-level `system` field,
+        // OpenAI's `role: "system"` message, etc.). We still wrap the
+        // retrieved context and the user's question into a single user-side
+        // message labelled "Context:" / "Question:" so the model sees them
+        // as one structured user turn.
         let user_message = format!(
             "Context:\n{}\n\nQuestion: {}",
             context.formatted_context, question
         );
 
-        let full_prompt = format!("{}\n\n{}", context.system_prompt, user_message);
-
         // --- Step 2: Invoke the provider ---
         let response = self
             .provider
-            .invoke(&full_prompt, self.max_tokens)
+            .invoke_with_system(&context.system_prompt, &user_message, self.max_tokens)
             .await
             .map_err(|e| RagError::SynthesisError(e.to_string()))?;
 
@@ -153,23 +158,13 @@ impl Synthesizer for RigSynthesizer {
         // instance). `SynthesisResult` requires `u32`, so we unwrap to 0 —
         // the same convention used by the v0.10.0 providers when a field is
         // genuinely unknown.
-        //
-        // ## Provider/model naming
-        //
-        // The `LlmProvider` trait exposes only `model_name()`; there is no
-        // `provider_name()`. We therefore use the model name for both the
-        // `provider` and `model` fields of `SynthesisResult`. This is a
-        // conscious scope decision for P3-1 — adding `provider_name()` to
-        // the trait belongs in a separate colossus-extract change.
-        let model_name = self.provider.model_name().to_string();
-
         Ok(SynthesisResult {
             answer: response.text,
             citations: Vec::new(), // Deferred to a future task (citation parsing)
             input_tokens: response.input_tokens.unwrap_or(0),
             output_tokens: response.output_tokens.unwrap_or(0),
-            provider: model_name.clone(),
-            model: model_name,
+            provider: self.provider.provider_name().to_string(),
+            model: self.provider.model_name().to_string(),
         })
     }
 }

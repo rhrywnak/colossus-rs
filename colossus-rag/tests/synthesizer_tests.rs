@@ -46,6 +46,10 @@ impl LlmProvider for TestLlmProvider {
         "test-model"
     }
 
+    fn provider_name(&self) -> &str {
+        "test-provider"
+    }
+
     fn cost_per_input_token(&self) -> Option<f64> {
         None
     }
@@ -173,7 +177,7 @@ async fn test_synthesize_success_populates_fields() {
     assert_eq!(result.input_tokens, 10);
     assert_eq!(result.output_tokens, 5);
     assert_eq!(result.model, "test-model");
-    assert_eq!(result.provider, "test-model");
+    assert_eq!(result.provider, "test-provider");
     assert!(result.citations.is_empty());
 }
 
