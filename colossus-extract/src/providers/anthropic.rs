@@ -26,6 +26,23 @@
 //! progress updates, and knows domain-specific retry budgets. Anthropic's own
 //! Go SDK acknowledges both patterns valid and leaves retry to the caller for
 //! concurrency-sensitive workloads.
+//!
+//! ## Why http1_only
+//!
+//! Raw reqwest with HTTP/2 negotiation hangs indefinitely when calling
+//! api.anthropic.com from inside a podman container. This is a known issue
+//! with HTTP/2 + TLS + the container network path; the symptom is an HTTP
+//! request that never returns, eventually hitting the 600s timeout.
+//!
+//! The deleted `backend/src/api/pipeline/anthropic.rs` in colossus-legal
+//! (commit 1414838 parent) documented the same issue and used rig-core as
+//! a workaround because rig internally forces HTTP/1.1. This provider uses
+//! direct reqwest to preserve the Anthropic `retry-after` header on 429
+//! responses (which rig discards), so we replicate rig's HTTP/1.1 forcing
+//! with `.http1_only()` on the reqwest Client builder.
+//!
+//! DO NOT remove `.http1_only()` without an end-to-end integration test
+//! confirming the replacement approach does not hang in a container.
 
 use std::time::Duration;
 
@@ -151,6 +168,7 @@ impl AnthropicProvider {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .tcp_keepalive(Duration::from_secs(TCP_KEEPALIVE_SECS))
+            .http1_only()
             .build()
             .map_err(|e| {
                 PipelineError::LlmProvider(format!("Failed to build Anthropic HTTP client: {e}"))
@@ -323,5 +341,21 @@ impl LlmProvider for AnthropicProvider {
     /// typed-prompt and raw-completion parsing paths.
     fn supports_structured_output(&self) -> bool {
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_new_succeeds_with_http1_only() {
+        // Verify the http1_only-configured client builds without error.
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            "claude-sonnet-4-6".to_string(),
+            32000,
+        );
+        assert!(provider.is_ok(), "AnthropicProvider::new failed: {:?}", provider.err());
     }
 }
