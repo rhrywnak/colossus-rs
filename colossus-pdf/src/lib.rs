@@ -29,6 +29,7 @@
 //! }
 //! ```
 
+mod classifier;
 mod error;
 mod extractor;
 mod page_grounder;
@@ -36,6 +37,7 @@ mod text_search;
 
 // --- Public API re-exports ---
 
+pub use classifier::{ContentType, PageClassification, PdfClassification};
 pub use error::PdfError;
 pub use extractor::{PageText, PdfTextExtractor};
 pub use page_grounder::{GroundingResult, MatchType, PageGrounder};

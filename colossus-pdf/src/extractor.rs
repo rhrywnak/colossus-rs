@@ -7,6 +7,9 @@
 //! wrapping an external type to control the public interface and
 //! add domain-specific methods without exposing the underlying library.
 
+use crate::classifier::{
+    ContentType, PageClassification, PdfClassification, TEXT_CHAR_THRESHOLD,
+};
 use crate::error::PdfError;
 use pdf_oxide::PdfDocument;
 
@@ -188,6 +191,62 @@ impl PdfTextExtractor {
             }
         }
         Ok(false)
+    }
+
+    /// Classify the PDF's content type by extracting text from each page.
+    ///
+    /// Pages with fewer than `TEXT_CHAR_THRESHOLD` (50) characters are
+    /// classified as scanned (needing OCR). The extracted text is cached
+    /// internally — subsequent calls to `extract_page` return cached
+    /// results. Classification + extraction costs no more than
+    /// extraction alone.
+    pub fn classify(&mut self) -> Result<PdfClassification, PdfError> {
+        let mut page_details = Vec::with_capacity(self.page_count as usize);
+        let mut text_pages = 0usize;
+        let mut scanned_pages = 0usize;
+        let mut pages_needing_ocr = Vec::new();
+        let mut total_chars = 0usize;
+
+        for page_num in 1..=self.page_count {
+            let text = self.extract_page(page_num)?;
+            let char_count = text.trim().len();
+            let has_text = char_count >= TEXT_CHAR_THRESHOLD;
+            let needs_ocr = !has_text;
+
+            total_chars += char_count;
+
+            if has_text {
+                text_pages += 1;
+            } else {
+                scanned_pages += 1;
+                pages_needing_ocr.push(page_num);
+            }
+
+            page_details.push(PageClassification {
+                page_number: page_num,
+                char_count,
+                has_text,
+                needs_ocr,
+            });
+        }
+
+        let content_type = if scanned_pages == 0 {
+            ContentType::TextBased
+        } else if text_pages == 0 {
+            ContentType::Scanned
+        } else {
+            ContentType::Mixed
+        };
+
+        Ok(PdfClassification {
+            content_type,
+            page_count: self.page_count as usize,
+            text_pages,
+            scanned_pages,
+            pages_needing_ocr,
+            total_chars,
+            page_details,
+        })
     }
 }
 
