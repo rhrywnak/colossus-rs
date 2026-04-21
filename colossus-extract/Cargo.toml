@@ -1,6 +1,6 @@
 [package]
 name = "colossus-extract"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 description = "Document extraction pipeline framework for Colossus applications"
 
