@@ -139,9 +139,39 @@ fn build_anthropic(lookup: EnvLookup<'_>) -> Result<Arc<dyn LlmProvider>, Pipeli
     })?;
 
     let max_tokens = parse_max_tokens(lookup)?;
+    let temperature = parse_llm_temperature(lookup);
 
-    let provider = AnthropicProvider::new(api_key, model, max_tokens)?;
+    let provider = AnthropicProvider::new(api_key, model, max_tokens, temperature)?;
     Ok(Arc::new(provider))
+}
+
+/// Parse `LLM_TEMPERATURE` into `Option<f64>`.
+///
+/// Rules:
+/// - Unset → `None` (the API applies its default; required for Opus 4.7 where
+///   sending the key at all triggers HTTP 400).
+/// - Valid float → `Some(value)` (e.g., pipeline extraction sets `LLM_TEMPERATURE=0`
+///   to preserve deterministic output).
+/// - Unparseable → `None` with a warning log. An unparseable value is operator
+///   error, but failing startup over a bad temperature string is worse than
+///   falling through to the API default. Extraction workloads that require
+///   deterministic output should set the value directly in code rather than
+///   relying on env-var parsing.
+fn parse_llm_temperature(lookup: EnvLookup<'_>) -> Option<f64> {
+    match lookup("LLM_TEMPERATURE") {
+        None => None,
+        Some(raw) => match raw.parse::<f64>() {
+            Ok(value) => Some(value),
+            Err(e) => {
+                tracing::warn!(
+                    value = %raw,
+                    error = %e,
+                    "LLM_TEMPERATURE is not a valid f64 — falling back to provider default (None)"
+                );
+                None
+            }
+        },
+    }
 }
 
 fn build_vllm_llm(lookup: EnvLookup<'_>) -> Result<Arc<dyn LlmProvider>, PipelineError> {
@@ -393,6 +423,51 @@ mod tests {
             }
             other => panic!("expected LlmProvider variant, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_llm_temperature_unset_returns_none() {
+        let lookup = |_: &str| -> Option<String> { None };
+        assert_eq!(parse_llm_temperature(&lookup), None);
+    }
+
+    #[test]
+    fn parse_llm_temperature_zero_returns_some_zero() {
+        let lookup = |key: &str| -> Option<String> {
+            if key == "LLM_TEMPERATURE" {
+                Some("0".to_string())
+            } else {
+                None
+            }
+        };
+        assert_eq!(parse_llm_temperature(&lookup), Some(0.0));
+    }
+
+    #[test]
+    fn parse_llm_temperature_float_parses() {
+        let lookup = |key: &str| -> Option<String> {
+            if key == "LLM_TEMPERATURE" {
+                Some("0.7".to_string())
+            } else {
+                None
+            }
+        };
+        assert_eq!(parse_llm_temperature(&lookup), Some(0.7));
+    }
+
+    /// Invalid values MUST NOT fail construction — they fall back to None with
+    /// a warning log. A garbled env var should not block startup; the API
+    /// default (or an explicit in-code override) is a better fallback.
+    #[test]
+    fn parse_llm_temperature_invalid_returns_none() {
+        let lookup = |key: &str| -> Option<String> {
+            if key == "LLM_TEMPERATURE" {
+                Some("not-a-number".to_string())
+            } else {
+                None
+            }
+        };
+        assert_eq!(parse_llm_temperature(&lookup), None);
     }
 
     #[test]

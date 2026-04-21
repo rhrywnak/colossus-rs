@@ -214,6 +214,86 @@ async fn test_pipeline_custom_config() {
 }
 
 // ===========================================================================
+// Unit Test 5: ask_with_synthesizer uses the caller-supplied synthesizer
+// ===========================================================================
+
+/// A second mock synthesizer with an identifiable answer and provider name,
+/// so a test can prove that `ask_with_synthesizer` routed the final stage
+/// through the caller's synthesizer rather than the pipeline's built-in one.
+struct CallerSuppliedSynthesizer;
+
+#[async_trait]
+impl Synthesizer for CallerSuppliedSynthesizer {
+    async fn synthesize(
+        &self,
+        _context: &AssembledContext,
+        _question: &str,
+    ) -> Result<SynthesisResult, RagError> {
+        Ok(SynthesisResult {
+            answer: "ANSWER-FROM-CALLER-SYNTH".into(),
+            citations: vec![],
+            input_tokens: 11,
+            output_tokens: 22,
+            provider: "caller-supplied".into(),
+            model: "custom-model".into(),
+        })
+    }
+}
+
+/// `ask_with_synthesizer` must route stage 5 through the caller-supplied
+/// synthesizer, not `self.synthesizer`. This is the contract the Chat
+/// endpoint depends on for per-request model selection.
+#[tokio::test]
+async fn test_ask_with_synthesizer_uses_caller_synthesizer() {
+    let pipeline = RagPipeline::builder()
+        .router(Box::new(NoOpRouter))
+        .retriever(Box::new(MockRetriever))
+        .assembler(Box::new(LegalAssembler::new()))
+        .synthesizer(Box::new(MockSynthesizer))
+        .build()
+        .expect("Should build");
+
+    let caller_synth = CallerSuppliedSynthesizer;
+    let result = pipeline
+        .ask_with_synthesizer("Any question", &caller_synth)
+        .await
+        .expect("ask_with_synthesizer should succeed");
+
+    // Identifiable fields prove the caller's synthesizer ran, not MockSynthesizer.
+    assert_eq!(result.answer, "ANSWER-FROM-CALLER-SYNTH");
+    assert_eq!(result.stats.provider, "caller-supplied");
+    assert_eq!(result.stats.model, "custom-model");
+    assert_eq!(result.stats.input_tokens, Some(11));
+    assert_eq!(result.stats.output_tokens, Some(22));
+    // Upstream stages must still run — chunks and route stats should be populated.
+    assert_eq!(result.stats.qdrant_hits, 1);
+}
+
+/// `ask()` must produce identical results to calling `ask_with_synthesizer`
+/// with `&*self.synthesizer`. This locks in the delegation so the two paths
+/// can never drift.
+#[tokio::test]
+async fn test_ask_delegates_to_default_synthesizer() {
+    let pipeline = RagPipeline::builder()
+        .router(Box::new(NoOpRouter))
+        .retriever(Box::new(MockRetriever))
+        .assembler(Box::new(LegalAssembler::new()))
+        .synthesizer(Box::new(MockSynthesizer))
+        .build()
+        .expect("Should build");
+
+    let result = pipeline
+        .ask("Test question")
+        .await
+        .expect("ask should succeed");
+
+    // When delegating to MockSynthesizer, we get its canned answer + provider.
+    assert_eq!(result.answer, "Mock answer based on the evidence.");
+    assert_eq!(result.stats.provider, "mock");
+    assert_eq!(result.stats.model, "mock-model");
+}
+
+// ===========================================================================
 // Integration Test 1: Broad search (needs all infrastructure)
 // ===========================================================================
 
@@ -431,7 +511,7 @@ async fn build_real_pipeline() -> RagPipeline {
     // --- LLM provider (Anthropic) ---
     let api_key = std::env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
     let llm_provider: Arc<dyn LlmProvider> = Arc::new(
-        AnthropicProvider::new(api_key, "claude-sonnet-4-20250514".to_string(), 4096)
+        AnthropicProvider::new(api_key, "claude-sonnet-4-20250514".to_string(), 4096, Some(0.0))
             .expect("AnthropicProvider should build"),
     );
 

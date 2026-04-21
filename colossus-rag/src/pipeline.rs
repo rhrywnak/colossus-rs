@@ -68,7 +68,9 @@ use crate::pipeline_helpers::{
 use crate::traits::{
     ContextAssembler, GraphExpander, QueryDecomposer, QueryRouter, Synthesizer, VectorRetriever,
 };
-use crate::types::{PipelineStats, RagResult, SubQuery};
+use crate::types::{
+    AssembledContext, ContextChunk, PipelineStats, RagResult, RetrievalStrategy, SubQuery,
+};
 
 // ---------------------------------------------------------------------------
 // RagPipeline — the assembled pipeline ready to answer questions
@@ -301,11 +303,46 @@ impl RagPipelineBuilder {
 // Pipeline execution — the ask() method
 // ---------------------------------------------------------------------------
 
+/// Output of the first four pipeline stages — everything needed for synthesis.
+///
+/// Private to the pipeline module. Bundles the four values that `ask` and
+/// `ask_with_synthesizer` both need from the shared pre-synthesis helper.
+/// A tuple would work but loses call-site readability with four fields.
+struct PreSynthesisOutcome {
+    /// Formatted context ready for the Synthesizer.
+    context: AssembledContext,
+    /// Accumulated timing stats for stages 1–4. The caller fills in
+    /// `synthesize_ms`, `input_tokens`, `output_tokens`, `provider`, `model`,
+    /// and `total_ms` after stage 5.
+    stats: PipelineStats,
+    /// Retrieved + expanded + reranked chunks, kept for `RagResult.chunks`.
+    chunks: Vec<ContextChunk>,
+    /// Router-chosen strategy, kept for `RagResult.strategy_used`.
+    strategy: RetrievalStrategy,
+}
+
 impl RagPipeline {
-    /// Ask a question and get an answer with citations.
+    /// Ask a question and get an answer with citations, using the pipeline's
+    /// built-in synthesizer.
     ///
-    /// This is the main entry point. It orchestrates all five pipeline stages
-    /// sequentially, collecting timing stats along the way.
+    /// Thin delegation to [`ask_with_synthesizer`](Self::ask_with_synthesizer) —
+    /// see that method's doc for the stage sequence, error semantics, and
+    /// timing details. Keeping the default path as a one-line delegation
+    /// ensures the two entry points can never diverge.
+    pub async fn ask(&self, question: &str) -> Result<RagResult, RagError> {
+        self.ask_with_synthesizer(question, &*self.synthesizer).await
+    }
+
+    /// Ask a question and get an answer, using a caller-supplied synthesizer
+    /// for the final stage.
+    ///
+    /// Runs the same pipeline stages as [`ask`](Self::ask) (route → decompose →
+    /// search → expand → rerank → assemble) but delegates synthesis to the
+    /// supplied synthesizer instead of `self.synthesizer`. This enables the
+    /// Chat endpoint to select a different model per request without
+    /// rebuilding the entire pipeline — a new `AnthropicProvider` per model
+    /// selection is cheap; rebuilding retriever, expander, and reranker is
+    /// expensive.
     ///
     /// ## Error propagation across pipeline stages
     ///
@@ -323,8 +360,61 @@ impl RagPipeline {
     ///
     /// Total time is measured independently (not summed from stages) to capture
     /// any overhead between stages (logging, allocations, etc.).
-    pub async fn ask(&self, question: &str) -> Result<RagResult, RagError> {
+    pub async fn ask_with_synthesizer(
+        &self,
+        question: &str,
+        synthesizer: &dyn Synthesizer,
+    ) -> Result<RagResult, RagError> {
         let total_start = Instant::now();
+        let PreSynthesisOutcome {
+            context,
+            mut stats,
+            chunks,
+            strategy,
+        } = self.run_pre_synthesis(question).await?;
+
+        // --- Stage 5: Synthesize answer (call Claude API) ---
+        let synth_start = Instant::now();
+        let synthesis = synthesizer.synthesize(&context, question).await?;
+        stats.synthesize_ms = synth_start.elapsed().as_millis() as u64;
+
+        // Fill in LLM-reported stats from the synthesis result.
+        stats.input_tokens = Some(synthesis.input_tokens);
+        stats.output_tokens = Some(synthesis.output_tokens);
+        stats.provider = synthesis.provider.clone();
+        stats.model = synthesis.model.clone();
+
+        // Total pipeline time (measured independently, not summed).
+        stats.total_ms = total_start.elapsed().as_millis() as u64;
+
+        tracing::info!(
+            total_ms = stats.total_ms,
+            input_tokens = synthesis.input_tokens,
+            output_tokens = synthesis.output_tokens,
+            "Pipeline: synthesis complete"
+        );
+
+        // --- Build final result ---
+        Ok(RagResult {
+            answer: synthesis.answer,
+            strategy_used: strategy,
+            chunks,
+            citations: synthesis.citations,
+            stats,
+        })
+    }
+
+    /// Run pipeline stages 1–4 (route → decompose → search → expand →
+    /// rerank → assemble) and return everything needed for synthesis.
+    ///
+    /// Shared by `ask` and `ask_with_synthesizer`. Factored out so a per-
+    /// request synthesizer swap doesn't duplicate 100+ lines of orchestration.
+    /// The returned `PipelineStats` has `synthesize_ms`, `total_ms`, and LLM
+    /// token fields left at default — the caller fills those after stage 5.
+    async fn run_pre_synthesis(
+        &self,
+        question: &str,
+    ) -> Result<PreSynthesisOutcome, RagError> {
         let mut stats = PipelineStats::default();
 
         // --- Stage 1: Route the question to a retrieval strategy ---
@@ -447,34 +537,11 @@ impl RagPipeline {
             "Pipeline: context assembled"
         );
 
-        // --- Stage 5: Synthesize answer (call Claude API) ---
-        let synth_start = Instant::now();
-        let synthesis = self.synthesizer.synthesize(&context, question).await?;
-        stats.synthesize_ms = synth_start.elapsed().as_millis() as u64;
-
-        // Fill in LLM-reported stats from the synthesis result.
-        stats.input_tokens = Some(synthesis.input_tokens);
-        stats.output_tokens = Some(synthesis.output_tokens);
-        stats.provider = synthesis.provider.clone();
-        stats.model = synthesis.model.clone();
-
-        // Total pipeline time (measured independently, not summed).
-        stats.total_ms = total_start.elapsed().as_millis() as u64;
-
-        tracing::info!(
-            total_ms = stats.total_ms,
-            input_tokens = synthesis.input_tokens,
-            output_tokens = synthesis.output_tokens,
-            "Pipeline: synthesis complete"
-        );
-
-        // --- Build final result ---
-        Ok(RagResult {
-            answer: synthesis.answer,
-            strategy_used: strategy,
-            chunks,
-            citations: synthesis.citations,
+        Ok(PreSynthesisOutcome {
+            context,
             stats,
+            chunks,
+            strategy,
         })
     }
 }

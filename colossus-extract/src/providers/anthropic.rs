@@ -143,6 +143,18 @@ pub struct AnthropicProvider {
     model: String,
     /// Default max tokens, reserved for future factory use.
     max_tokens_default: u32,
+    /// Optional sampling temperature. `None` omits the parameter from the
+    /// request body entirely; `Some(t)` includes `"temperature": t`.
+    ///
+    /// ## Why Option, not a default
+    ///
+    /// Claude Opus 4.7 (released April 16 2026) returns HTTP 400 if
+    /// `temperature`, `top_p`, or `top_k` are set to any non-default value.
+    /// Sending the key at all — even `temperature: 0` — fails. Extraction
+    /// workloads want deterministic output (`Some(0.0)`); Chat workloads on
+    /// Opus 4.7 must omit the key entirely (`None`). The caller decides; the
+    /// provider never picks a default.
+    temperature: Option<f64>,
     /// Reusable HTTP client with connection pool, timeout, and keep-alive.
     http_client: reqwest::Client,
 }
@@ -155,6 +167,10 @@ impl AnthropicProvider {
     /// - `max_tokens_default`: Default max tokens for future factory use; exposed
     ///   via `max_tokens_default()` accessor. `invoke()` uses its own `max_tokens`
     ///   parameter, not this default.
+    /// - `temperature`: Optional sampling temperature. `Some(0.0)` gives
+    ///   deterministic extraction output; `None` omits the key from the request
+    ///   entirely (required for Opus 4.7 compatibility — see the `temperature`
+    ///   field doc on [`AnthropicProvider`]).
     ///
     /// # Errors
     ///
@@ -164,6 +180,7 @@ impl AnthropicProvider {
         api_key: String,
         model: String,
         max_tokens_default: u32,
+        temperature: Option<f64>,
     ) -> Result<Self, PipelineError> {
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
@@ -178,8 +195,39 @@ impl AnthropicProvider {
             api_key,
             model,
             max_tokens_default,
+            temperature,
             http_client,
         })
+    }
+
+    /// Build the JSON request body for a Messages API call.
+    ///
+    /// Private helper factored out so `invoke()` and `invoke_with_system()` share
+    /// one authoritative body-shape definition, and so unit tests can assert on
+    /// the serialized body without hitting the network.
+    ///
+    /// `system` is threaded through as `Option<&str>` rather than having two
+    /// separate builders because the only difference between the two call paths
+    /// is the presence of the top-level `"system"` field. Temperature is
+    /// included conditionally — see the `temperature` field doc for rationale.
+    fn build_body(
+        &self,
+        system: Option<&str>,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}]
+        });
+        if let Some(sys) = system {
+            body["system"] = serde_json::json!(sys);
+        }
+        if let Some(temp) = self.temperature {
+            body["temperature"] = serde_json::json!(temp);
+        }
+        body
     }
 
     /// Configured default max tokens, for factory and diagnostic use.
@@ -307,9 +355,10 @@ impl AnthropicProvider {
 impl LlmProvider for AnthropicProvider {
     /// Send a prompt to the Anthropic Messages API and return the raw text response.
     ///
-    /// Builds a Messages API request with `temperature: 0.0` (deterministic output
-    /// for extraction). No system prompt is injected — prompt engineering is the
-    /// caller's concern per the `LlmProvider` trait contract.
+    /// Temperature is included in the request body only if the provider was
+    /// constructed with `Some(t)` — otherwise it is omitted entirely so the API
+    /// applies its own default. No system prompt is injected — prompt
+    /// engineering is the caller's concern per the `LlmProvider` trait contract.
     ///
     /// Multi-block responses are concatenated: Anthropic may return multiple text
     /// blocks for long responses. Non-text blocks (tool_use) are ignored because
@@ -320,12 +369,7 @@ impl LlmProvider for AnthropicProvider {
     /// See module-level error taxonomy. Returns typed errors that the caller
     /// (LlmExtract step) can match on for retry decisions.
     async fn invoke(&self, prompt: &str, max_tokens: u32) -> Result<LlmResponse, PipelineError> {
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "messages": [{"role": "user", "content": prompt}]
-        });
+        let body = self.build_body(None, prompt, max_tokens);
         self.post_and_parse(body).await
     }
 
@@ -347,13 +391,7 @@ impl LlmProvider for AnthropicProvider {
         prompt: &str,
         max_tokens: u32,
     ) -> Result<LlmResponse, PipelineError> {
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "temperature": 0.0,
-            "system": system,
-            "messages": [{"role": "user", "content": prompt}]
-        });
+        let body = self.build_body(Some(system), prompt, max_tokens);
         self.post_and_parse(body).await
     }
 
@@ -405,7 +443,66 @@ mod tests {
             "test-key".to_string(),
             "claude-sonnet-4-6".to_string(),
             32000,
+            None,
         );
         assert!(provider.is_ok(), "AnthropicProvider::new failed: {:?}", provider.err());
+    }
+
+    /// When constructed with `temperature: None`, the request body MUST NOT
+    /// contain a `"temperature"` key. Sending the key at all — even 0 — is
+    /// what Opus 4.7 rejects with HTTP 400, so the absence check is the
+    /// contract this test locks in.
+    #[test]
+    fn body_omits_temperature_when_none() {
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            "claude-sonnet-4-6".to_string(),
+            1024,
+            None,
+        )
+        .unwrap();
+        let body = provider.build_body(None, "hello", 100);
+        assert!(
+            body.get("temperature").is_none(),
+            "body should not contain 'temperature' key when ctor received None, got: {body}"
+        );
+        assert_eq!(body["model"], "claude-sonnet-4-6");
+        assert_eq!(body["max_tokens"], 100);
+    }
+
+    /// When constructed with `Some(t)`, the body MUST include
+    /// `"temperature": t`. Preserves deterministic-extraction behavior for
+    /// the pipeline `LlmExtract` step, which wants `Some(0.0)`.
+    #[test]
+    fn body_includes_temperature_when_some() {
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            "claude-sonnet-4-6".to_string(),
+            1024,
+            Some(0.0),
+        )
+        .unwrap();
+        let body = provider.build_body(None, "hello", 100);
+        assert_eq!(body["temperature"], 0.0);
+    }
+
+    /// `build_body` with a `Some(system)` argument adds a top-level `"system"`
+    /// field — the Anthropic-native way to separate instruction text from
+    /// user content. Combined with the temperature-None path, this guards
+    /// the Chat endpoint's exact request shape on Opus 4.7.
+    #[test]
+    fn body_with_system_omits_temperature_when_none() {
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            "claude-opus-4-7".to_string(),
+            1024,
+            None,
+        )
+        .unwrap();
+        let body = provider.build_body(Some("You are helpful."), "hello", 200);
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["system"], "You are helpful.");
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["messages"][0]["content"], "hello");
     }
 }

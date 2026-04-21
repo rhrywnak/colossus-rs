@@ -29,6 +29,7 @@ async fn live_anthropic_call_returns_within_30s() {
         api_key,
         "claude-sonnet-4-6".to_string(),
         1024,
+        None,
     )
     .expect("provider should build");
 
