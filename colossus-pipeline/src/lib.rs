@@ -25,6 +25,7 @@ pub mod cancel;
 pub mod error;
 pub mod events;
 pub mod progress;
+pub mod recorder;
 pub mod schema;
 pub mod scheduler;
 pub mod step;
@@ -32,6 +33,7 @@ pub mod task;
 pub mod worker;
 
 pub use error::PipelineError;
+pub use recorder::{NoopStepRecorder, StepRecorder};
 pub use schema::{JobControl, JobRow, JobStatus, PipelineEvent};
 pub use step::{Step, StepResult};
 pub use task::Task;

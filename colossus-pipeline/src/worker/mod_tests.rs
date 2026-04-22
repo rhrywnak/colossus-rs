@@ -2,6 +2,7 @@ use super::*;
 use crate::cancel::CancellationToken;
 use crate::error::PipelineError;
 use crate::progress::ProgressReporter;
+use crate::recorder::NoopStepRecorder;
 use crate::step::StepResult;
 
 use async_trait::async_trait;
@@ -58,6 +59,7 @@ async fn test_worker_construction() {
     let config = WorkerConfig::from_env();
     let (_tx, rx) = tokio::sync::watch::channel(false);
 
-    let worker = Worker::<MockTask>::new(db, context, config, rx);
+    let recorder: Arc<dyn StepRecorder> = Arc::new(NoopStepRecorder);
+    let worker = Worker::<MockTask>::new(db, context, config, rx, recorder);
     drop(worker);
 }

@@ -16,8 +16,8 @@ use colossus_pipeline::cancel::CancellationToken;
 use colossus_pipeline::progress::ProgressReporter;
 use colossus_pipeline::worker::config::WorkerConfig;
 use colossus_pipeline::{
-    JobRow, JobStatus, PipelineError, PipelineEvent, Scheduler, StepResult, Task,
-    Worker,
+    JobRow, JobStatus, NoopStepRecorder, PipelineError, PipelineEvent, Scheduler, StepResult,
+    Task, Worker,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -183,7 +183,8 @@ async fn spawn_worker(
 ) -> (tokio::task::JoinHandle<()>, tokio::sync::watch::Sender<bool>) {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let config = test_worker_config();
-    let worker = Worker::<TestTask>::new(db, context, config, shutdown_rx);
+    let worker =
+        Worker::<TestTask>::new(db, context, config, shutdown_rx, Arc::new(NoopStepRecorder));
     let handle = tokio::spawn(async move {
         if let Err(e) = worker.run().await {
             eprintln!("Worker exited with error: {e}");
