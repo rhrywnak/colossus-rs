@@ -110,24 +110,30 @@ pub(crate) async fn execute_step<T: Task>(
 
         exec_result = execute_future => {
             match exec_result {
-                Ok(step_result) => match step_result {
-                    StepResult::Next(next_task) => {
-                        ExecutionResult::Success(
-                            StepResult::Next(next_task),
-                            serde_json::Value::Null,
-                        )
+                Ok(step_result) => {
+                    // Retrieve any summary data the step stored via
+                    // progress.set_step_result() before returning.
+                    let step_summary = progress.take_step_result();
+
+                    match step_result {
+                        StepResult::Next(next_task) => {
+                            ExecutionResult::Success(
+                                StepResult::Next(next_task),
+                                step_summary,
+                            )
+                        }
+                        StepResult::Delay(next_task, duration) => {
+                            ExecutionResult::Success(
+                                StepResult::Delay(next_task, duration),
+                                step_summary,
+                            )
+                        }
+                        StepResult::Done => ExecutionResult::Done(step_summary),
+                        StepResult::WaitForInput(parked_task) => {
+                            ExecutionResult::WaitForInput(parked_task)
+                        }
                     }
-                    StepResult::Delay(next_task, duration) => {
-                        ExecutionResult::Success(
-                            StepResult::Delay(next_task, duration),
-                            serde_json::Value::Null,
-                        )
-                    }
-                    StepResult::Done => ExecutionResult::Done(serde_json::Value::Null),
-                    StepResult::WaitForInput(parked_task) => {
-                        ExecutionResult::WaitForInput(parked_task)
-                    }
-                },
+                }
                 Err(e) => ExecutionResult::Failed(e.to_string()),
             }
         }
