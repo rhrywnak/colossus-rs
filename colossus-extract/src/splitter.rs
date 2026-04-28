@@ -9,6 +9,7 @@
 
 use crate::traits::TextSplitter;
 use crate::types::TextChunk;
+use std::collections::HashMap;
 
 /// Splits text into fixed-size chunks with configurable overlap.
 ///
@@ -72,6 +73,7 @@ impl TextSplitter for FixedSizeSplitter {
             return vec![TextChunk {
                 text: text.to_string(),
                 index: 0,
+                metadata: HashMap::new(),
             }];
         }
 
@@ -98,6 +100,7 @@ impl TextSplitter for FixedSizeSplitter {
                 chunks.push(TextChunk {
                     text: chunk_text.to_string(),
                     index,
+                    metadata: HashMap::new(),
                 });
                 index += 1;
             }

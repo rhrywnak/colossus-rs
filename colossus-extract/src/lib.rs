@@ -53,6 +53,6 @@ pub use schema::{
 pub use splitter::FixedSizeSplitter;
 pub use traits::{EmbeddingProvider, EntityResolver, LlmProvider, LlmResponse, TextSplitter};
 pub use types::{
-    ExtractedEntity, ExtractedRelationship, ExtractionResult, GroundingStatus, KnownEntity,
-    PruningStats, ResolutionMethod, ResolvedEntity, TextChunk,
+    AtomicUnit, ExtractedEntity, ExtractedRelationship, ExtractionResult, GroundingStatus,
+    KnownEntity, PruningStats, ResolutionMethod, ResolvedEntity, TextChunk,
 };

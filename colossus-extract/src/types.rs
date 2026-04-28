@@ -8,6 +8,46 @@
 //! naming conventions automatically.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// A detected atomic unit within a document — the smallest meaningful
+/// structural element that must never be split across chunks.
+///
+/// Examples of atomic units:
+/// - One Q&A pair in a discovery response
+/// - One numbered paragraph in a complaint
+/// - One sworn statement in an affidavit
+/// - One section under a heading
+///
+/// The StructureAwareSplitter detects these units using boundary patterns,
+/// then groups them into TextChunks for LLM processing. The key invariant:
+/// an atomic unit is NEVER split across chunk boundaries.
+///
+/// ## Rust Learning: Named fields vs HashMap
+///
+/// `text`, `index`, `start_offset`, and `end_offset` are named fields
+/// because the splitter algorithm depends on them at compile time — they
+/// are structural invariants. The `metadata` HashMap carries everything
+/// else: question numbers, page hints, section titles — things that vary
+/// by document type and that downstream consumers (not the splitter) use.
+/// This gives compile-time safety for the core and runtime flexibility
+/// for the periphery.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AtomicUnit {
+    /// The full text of this atomic unit.
+    pub text: String,
+    /// Position of this unit in the sequence of detected units (0-based).
+    pub index: usize,
+    /// Byte offset where this unit starts in the original document text.
+    pub start_offset: usize,
+    /// Byte offset where this unit ends in the original document text (exclusive).
+    pub end_offset: usize,
+    /// Flexible metadata — identifier, page number, section title, anything
+    /// the boundary detector finds that downstream consumers might need.
+    /// Empty by default.
+    #[serde(default)]
+    pub metadata: HashMap<String, serde_json::Value>,
+}
 
 /// A chunk of text split from a document.
 ///
@@ -17,12 +57,29 @@ use serde::{Deserialize, Serialize};
 /// 1. Prefix entity IDs with chunk index (prevents collisions)
 /// 2. Store per-chunk metrics (tokens, duration, errors)
 /// 3. Link extracted entities back to their source chunk
+///
+/// ## Rust Learning: Flexible metadata with HashMap
+///
+/// The `metadata` field uses `HashMap<String, serde_json::Value>` instead
+/// of named fields for extensibility. Different splitters attach different
+/// metadata — the FixedSizeSplitter might record character offsets, while
+/// a StructureAwareSplitter records unit ranges and identifiers. Using a
+/// HashMap means adding new metadata never requires changing this struct.
+///
+/// `#[serde(default)]` makes the field optional during deserialization —
+/// existing serialized TextChunks without metadata will deserialize with
+/// an empty HashMap. This is backward compatibility by design.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextChunk {
     /// The chunk text content.
     pub text: String,
     /// Position of this chunk in the document (0-based).
     pub index: usize,
+    /// Flexible metadata — splitter-specific information about this chunk.
+    /// Examples: unit_range, unit_identifiers, preamble_included, fallback reason.
+    /// Empty by default — existing splitters continue to work unchanged.
+    #[serde(default)]
+    pub metadata: HashMap<String, serde_json::Value>,
 }
 
 /// Statistics from graph pruning — what was removed and why.
