@@ -27,6 +27,7 @@
 
 pub mod config;
 pub mod error;
+pub mod merger;
 pub mod prompt;
 pub mod providers;
 pub mod resolver;
@@ -39,6 +40,7 @@ pub mod types;
 // --- Public API re-exports ---
 pub use config::ConfigAccess;
 pub use error::PipelineError;
+pub use merger::{ChunkMerger, MergeResult, MergeStats};
 pub use prompt::{PromptArtifact, PromptBuilder};
 pub use providers::embedding_provider_from_env;
 pub use providers::embedding_provider_from_lookup;
