@@ -38,10 +38,12 @@ use crate::traits::EmbeddingProvider;
 /// OpenAI-compatible Embeddings endpoint path, confirmed by docs.vllm.ai.
 const EMBEDDINGS_PATH: &str = "/v1/embeddings";
 
-/// Request timeout in seconds — matches sibling `VllmProvider`.
+/// Default request timeout when the caller does not specify one — matches
+/// sibling `VllmProvider`.
 ///
-/// 10 minutes accommodates large batch embedding calls.
-const REQUEST_TIMEOUT_SECS: u64 = 600;
+/// 10 minutes accommodates large batch embedding calls. Callers that need a
+/// different value pass it via the `request_timeout_secs` constructor parameter.
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 600;
 
 /// TCP keep-alive interval in seconds — matches sibling `VllmProvider`.
 ///
@@ -115,6 +117,9 @@ pub struct VllmEmbeddingProvider {
     dimensions: u32,
     /// Reusable HTTP client with connection pool, timeout, and keep-alive.
     http_client: reqwest::Client,
+    /// Request timeout in seconds, retained for diagnostic logging and error
+    /// messages so operators can see the configured value at the call site.
+    request_timeout_secs: u64,
 }
 
 impl VllmEmbeddingProvider {
@@ -131,6 +136,9 @@ impl VllmEmbeddingProvider {
     ///   Qdrant collection configuration. Every response is verified against
     ///   this value to catch operator misconfiguration before silent index
     ///   corruption.
+    /// - `request_timeout_secs`: Optional reqwest client timeout in seconds.
+    ///   `None` uses [`DEFAULT_REQUEST_TIMEOUT_SECS`] (600). Callers issuing
+    ///   large batch requests should pass a longer timeout.
     ///
     /// # Errors
     ///
@@ -141,6 +149,7 @@ impl VllmEmbeddingProvider {
         model: String,
         api_key: Option<String>,
         dimensions: u32,
+        request_timeout_secs: Option<u64>,
     ) -> Result<Self, PipelineError> {
         if base_url.ends_with('/') || base_url.ends_with("/v1") {
             return Err(PipelineError::LlmProvider(format!(
@@ -148,8 +157,9 @@ impl VllmEmbeddingProvider {
             )));
         }
 
+        let request_timeout_secs = request_timeout_secs.unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
         let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(request_timeout_secs))
             .tcp_keepalive(Duration::from_secs(TCP_KEEPALIVE_SECS))
             .build()
             .map_err(|e| {
@@ -164,6 +174,7 @@ impl VllmEmbeddingProvider {
             api_key,
             dimensions,
             http_client,
+            request_timeout_secs,
         })
     }
 
@@ -194,13 +205,14 @@ impl VllmEmbeddingProvider {
 
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {
+                let timeout_secs = self.request_timeout_secs;
                 tracing::warn!(
                     model = %self.model,
-                    timeout_secs = REQUEST_TIMEOUT_SECS,
+                    timeout_secs,
                     "vLLM embedding request timed out"
                 );
                 PipelineError::LlmProvider(format!(
-                    "request timeout after {REQUEST_TIMEOUT_SECS}s: {e}"
+                    "request timeout after {timeout_secs}s: {e}"
                 ))
             } else {
                 PipelineError::LlmProvider(format!("network error: {e}"))
@@ -484,6 +496,20 @@ mod tests {
         let err = validate_batch(response, 3, 2).unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("not contiguous"), "got: {msg}");
+    }
+
+    /// A non-default `request_timeout_secs` must be accepted without error
+    /// — covers the new constructor path added by Phase 1c.
+    #[test]
+    fn provider_new_accepts_custom_timeout() {
+        let provider = VllmEmbeddingProvider::new(
+            "http://localhost:8000".to_string(),
+            "test-embed".to_string(),
+            None,
+            768,
+            Some(1800),
+        );
+        assert!(provider.is_ok(), "Custom timeout must be accepted");
     }
 
     /// validate_batch errors if any single entry has the wrong dimension,

@@ -34,11 +34,13 @@ use crate::traits::{LlmProvider, LlmResponse};
 /// OpenAI-compatible Chat Completions endpoint path, confirmed by docs.vllm.ai.
 const CHAT_COMPLETIONS_PATH: &str = "/v1/chat/completions";
 
-/// Request timeout in seconds — matches AnthropicProvider.
+/// Default request timeout when the caller does not specify one — matches
+/// `AnthropicProvider`.
 ///
 /// 10 minutes accommodates long-context extraction. vLLM has no different
-/// recommendation.
-const REQUEST_TIMEOUT_SECS: u64 = 600;
+/// recommendation. Callers that need a different value pass it via the
+/// `request_timeout_secs` constructor parameter.
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 600;
 
 /// TCP keep-alive interval in seconds — matches AnthropicProvider.
 ///
@@ -134,6 +136,9 @@ pub struct VllmProvider {
     max_tokens_default: u32,
     /// Reusable HTTP client with connection pool, timeout, and keep-alive.
     http_client: reqwest::Client,
+    /// Request timeout in seconds, retained for diagnostic logging and error
+    /// messages so operators can see the configured value at the call site.
+    request_timeout_secs: u64,
 }
 
 impl VllmProvider {
@@ -147,6 +152,9 @@ impl VllmProvider {
     ///   `None` for local servers without authentication.
     /// - `max_tokens_default`: Default max tokens for future factory use; exposed
     ///   via `max_tokens_default()` accessor.
+    /// - `request_timeout_secs`: Optional reqwest client timeout in seconds.
+    ///   `None` uses [`DEFAULT_REQUEST_TIMEOUT_SECS`] (600). Callers extracting
+    ///   large documents should pass a longer timeout.
     ///
     /// # Errors
     ///
@@ -157,6 +165,7 @@ impl VllmProvider {
         model: String,
         api_key: Option<String>,
         max_tokens_default: u32,
+        request_timeout_secs: Option<u64>,
     ) -> Result<Self, PipelineError> {
         if base_url.ends_with('/') || base_url.ends_with("/v1") {
             return Err(PipelineError::LlmProvider(format!(
@@ -164,8 +173,9 @@ impl VllmProvider {
             )));
         }
 
+        let request_timeout_secs = request_timeout_secs.unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
         let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(request_timeout_secs))
             .tcp_keepalive(Duration::from_secs(TCP_KEEPALIVE_SECS))
             .build()
             .map_err(|e| {
@@ -178,6 +188,7 @@ impl VllmProvider {
             api_key,
             max_tokens_default,
             http_client,
+            request_timeout_secs,
         })
     }
 
@@ -214,13 +225,14 @@ impl VllmProvider {
 
         let response = request.send().await.map_err(|e| {
             if e.is_timeout() {
+                let timeout_secs = self.request_timeout_secs;
                 tracing::warn!(
                     model = %self.model,
-                    timeout_secs = REQUEST_TIMEOUT_SECS,
+                    timeout_secs,
                     "vLLM request timed out"
                 );
                 PipelineError::LlmProvider(format!(
-                    "request timeout after {REQUEST_TIMEOUT_SECS}s: {e}"
+                    "request timeout after {timeout_secs}s: {e}"
                 ))
             } else {
                 PipelineError::LlmProvider(format!("network error: {e}"))
@@ -387,5 +399,24 @@ impl LlmProvider for VllmProvider {
     /// raw-completion + JSON-repair parsing rather than typed-prompt extraction.
     fn supports_structured_output(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A non-default `request_timeout_secs` must be accepted without error
+    /// — covers the new constructor path added by Phase 1c.
+    #[test]
+    fn provider_new_accepts_custom_timeout() {
+        let provider = VllmProvider::new(
+            "http://localhost:8000".to_string(),
+            "test-model".to_string(),
+            None,
+            32_000,
+            Some(1800),
+        );
+        assert!(provider.is_ok(), "Custom timeout must be accepted");
     }
 }

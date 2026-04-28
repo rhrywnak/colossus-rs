@@ -141,7 +141,7 @@ fn build_anthropic(lookup: EnvLookup<'_>) -> Result<Arc<dyn LlmProvider>, Pipeli
     let max_tokens = parse_max_tokens(lookup)?;
     let temperature = parse_llm_temperature(lookup);
 
-    let provider = AnthropicProvider::new(api_key, model, max_tokens, temperature)?;
+    let provider = AnthropicProvider::new(api_key, model, max_tokens, temperature, None)?;
     Ok(Arc::new(provider))
 }
 
@@ -186,7 +186,7 @@ fn build_vllm_llm(lookup: EnvLookup<'_>) -> Result<Arc<dyn LlmProvider>, Pipelin
     let api_key = lookup("VLLM_API_KEY");
     let max_tokens = parse_max_tokens(lookup)?;
 
-    let provider = VllmProvider::new(base_url, model, api_key, max_tokens)?;
+    let provider = VllmProvider::new(base_url, model, api_key, max_tokens, None)?;
     Ok(Arc::new(provider))
 }
 
@@ -323,7 +323,7 @@ fn build_vllm_embedding(
     let dimensions = require_u32(lookup, "EMBEDDING_DIMENSIONS")?;
     let api_key = lookup("VLLM_API_KEY");
 
-    let provider = VllmEmbeddingProvider::new(base_url, model, api_key, dimensions)?;
+    let provider = VllmEmbeddingProvider::new(base_url, model, api_key, dimensions, None)?;
     Ok(Arc::new(provider))
 }
 

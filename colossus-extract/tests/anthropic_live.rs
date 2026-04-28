@@ -30,6 +30,7 @@ async fn live_anthropic_call_returns_within_30s() {
         "claude-sonnet-4-6".to_string(),
         1024,
         None,
+        None,
     )
     .expect("provider should build");
 

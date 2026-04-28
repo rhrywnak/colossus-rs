@@ -14,6 +14,7 @@ fn vllm_provider_is_object_safe() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     let _boxed: Box<dyn LlmProvider> = Box::new(provider);
@@ -30,6 +31,7 @@ fn model_name_returns_constructor_value() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     assert_eq!(provider.model_name(), "llama-3-8b");
@@ -46,6 +48,7 @@ fn max_tokens_default_accessor() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     assert_eq!(provider.max_tokens_default(), 2048);
@@ -62,6 +65,7 @@ fn cost_methods_return_none() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     assert_eq!(provider.cost_per_input_token(), None);
@@ -82,6 +86,7 @@ fn supports_structured_output_returns_false() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     assert!(!provider.supports_structured_output());
@@ -99,6 +104,7 @@ fn provider_name_returns_vllm() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     )
     .unwrap();
     assert_eq!(provider.provider_name(), "vllm");
@@ -116,6 +122,7 @@ fn constructor_succeeds_with_valid_inputs() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -136,6 +143,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));
@@ -146,6 +154,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));
@@ -156,6 +165,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "llama-3-8b".into(),
         None,
         2048,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));

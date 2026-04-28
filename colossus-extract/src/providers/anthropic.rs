@@ -58,13 +58,16 @@ const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 /// Anthropic API version header. Stable value from Anthropic documentation.
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
-/// Request timeout in seconds — 10 minutes, matching Anthropic SDK default.
+/// Default request timeout when the caller does not specify one — 10 minutes,
+/// matching the Anthropic SDK default.
 ///
 /// Anthropic's own Python and TypeScript SDKs default to 10 minute timeouts
 /// for non-streaming Messages API requests. Large-context extraction (1M tokens)
 /// can legitimately take several minutes. Shorter timeouts risk cutting off
 /// valid long requests; longer timeouts leave hung connections alive too long.
-const REQUEST_TIMEOUT_SECS: u64 = 600;
+/// Callers that need a different value pass it via the `request_timeout_secs`
+/// constructor parameter.
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 600;
 
 /// TCP keep-alive interval in seconds.
 ///
@@ -157,6 +160,9 @@ pub struct AnthropicProvider {
     temperature: Option<f64>,
     /// Reusable HTTP client with connection pool, timeout, and keep-alive.
     http_client: reqwest::Client,
+    /// Request timeout in seconds, retained for diagnostic logging and error
+    /// messages so operators can see the configured value at the call site.
+    request_timeout_secs: u64,
 }
 
 impl AnthropicProvider {
@@ -171,6 +177,9 @@ impl AnthropicProvider {
     ///   deterministic extraction output; `None` omits the key from the request
     ///   entirely (required for Opus 4.7 compatibility — see the `temperature`
     ///   field doc on [`AnthropicProvider`]).
+    /// - `request_timeout_secs`: Optional reqwest client timeout in seconds.
+    ///   `None` uses [`DEFAULT_REQUEST_TIMEOUT_SECS`] (600). Callers extracting
+    ///   large documents should pass a longer timeout.
     ///
     /// # Errors
     ///
@@ -181,9 +190,11 @@ impl AnthropicProvider {
         model: String,
         max_tokens_default: u32,
         temperature: Option<f64>,
+        request_timeout_secs: Option<u64>,
     ) -> Result<Self, PipelineError> {
+        let request_timeout_secs = request_timeout_secs.unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
         let http_client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .timeout(Duration::from_secs(request_timeout_secs))
             .tcp_keepalive(Duration::from_secs(TCP_KEEPALIVE_SECS))
             .http1_only()
             .build()
@@ -197,6 +208,7 @@ impl AnthropicProvider {
             max_tokens_default,
             temperature,
             http_client,
+            request_timeout_secs,
         })
     }
 
@@ -263,13 +275,14 @@ impl AnthropicProvider {
             .await
             .map_err(|e| {
                 if e.is_timeout() {
+                    let timeout_secs = self.request_timeout_secs;
                     tracing::warn!(
                         model = %self.model,
-                        timeout_secs = REQUEST_TIMEOUT_SECS,
+                        timeout_secs,
                         "Anthropic request timed out"
                     );
                     PipelineError::LlmProvider(format!(
-                        "request timeout after {REQUEST_TIMEOUT_SECS}s: {e}"
+                        "request timeout after {timeout_secs}s: {e}"
                     ))
                 } else {
                     PipelineError::LlmProvider(format!("network error: {e}"))
@@ -444,8 +457,23 @@ mod tests {
             "claude-sonnet-4-6".to_string(),
             32000,
             None,
+            None,
         );
         assert!(provider.is_ok(), "AnthropicProvider::new failed: {:?}", provider.err());
+    }
+
+    /// A non-default `request_timeout_secs` must be accepted without error
+    /// — covers the new constructor path added by Phase 1c.
+    #[test]
+    fn provider_new_accepts_custom_timeout() {
+        let provider = AnthropicProvider::new(
+            "test-key".to_string(),
+            "claude-sonnet-4-6".to_string(),
+            32000,
+            None,
+            Some(1800),
+        );
+        assert!(provider.is_ok(), "Custom timeout must be accepted");
     }
 
     /// When constructed with `temperature: None`, the request body MUST NOT
@@ -458,6 +486,7 @@ mod tests {
             "test-key".to_string(),
             "claude-sonnet-4-6".to_string(),
             1024,
+            None,
             None,
         )
         .unwrap();
@@ -480,6 +509,7 @@ mod tests {
             "claude-sonnet-4-6".to_string(),
             1024,
             Some(0.0),
+            None,
         )
         .unwrap();
         let body = provider.build_body(None, "hello", 100);
@@ -496,6 +526,7 @@ mod tests {
             "test-key".to_string(),
             "claude-opus-4-7".to_string(),
             1024,
+            None,
             None,
         )
         .unwrap();

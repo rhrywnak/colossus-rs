@@ -12,7 +12,7 @@ fn anthropic_provider_is_object_safe() {
     let _: Option<Box<dyn LlmProvider>> = None;
 
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     let _boxed: Box<dyn LlmProvider> = Box::new(provider);
 }
 
@@ -24,7 +24,7 @@ fn anthropic_provider_is_object_safe() {
 #[test]
 fn model_name_returns_constructor_value() {
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     assert_eq!(provider.model_name(), "claude-sonnet-4-6");
 }
 
@@ -36,7 +36,7 @@ fn model_name_returns_constructor_value() {
 #[test]
 fn max_tokens_default_accessor() {
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     assert_eq!(provider.max_tokens_default(), 4096);
 }
 
@@ -50,7 +50,7 @@ fn max_tokens_default_accessor() {
 #[test]
 fn cost_methods_return_none() {
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     assert_eq!(provider.cost_per_input_token(), None);
     assert_eq!(provider.cost_per_output_token(), None);
 }
@@ -63,7 +63,7 @@ fn cost_methods_return_none() {
 #[test]
 fn supports_structured_output_returns_true() {
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     assert!(provider.supports_structured_output());
 }
 
@@ -75,7 +75,7 @@ fn supports_structured_output_returns_true() {
 #[test]
 fn provider_name_returns_anthropic() {
     let provider =
-        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None).unwrap();
+        AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None).unwrap();
     assert_eq!(provider.provider_name(), "anthropic");
 }
 
@@ -86,6 +86,6 @@ fn provider_name_returns_anthropic() {
 /// failure here would indicate an environmental issue, not a code bug.
 #[test]
 fn constructor_succeeds_with_valid_inputs() {
-    let result = AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None);
+    let result = AnthropicProvider::new("test-key".into(), "claude-sonnet-4-6".into(), 4096, None, None);
     assert!(result.is_ok());
 }

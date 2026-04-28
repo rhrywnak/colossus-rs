@@ -15,6 +15,7 @@ fn vllm_embedding_provider_is_object_safe() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     )
     .unwrap();
     let _boxed: Box<dyn EmbeddingProvider> = Box::new(provider);
@@ -32,6 +33,7 @@ fn constructor_succeeds_with_valid_inputs() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -49,6 +51,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));
@@ -59,6 +62,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));
@@ -69,6 +73,7 @@ fn constructor_rejects_base_url_with_v1_suffix() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     );
     assert!(result.is_err());
     assert!(matches!(result, Err(PipelineError::LlmProvider(_))));
@@ -85,6 +90,7 @@ fn dimensions_returns_constructor_value() {
         "nomic-embed".into(),
         None,
         384,
+        None,
     )
     .unwrap();
     assert_eq!(provider.dimensions(), 384);
@@ -99,6 +105,7 @@ fn dimensions_returns_constructor_value_differs_from_default() {
         "nomic-embed".into(),
         None,
         1024,
+        None,
     )
     .unwrap();
     assert_eq!(provider.dimensions(), 1024);
@@ -115,6 +122,7 @@ fn model_name_returns_constructor_value() {
         "test-model".into(),
         None,
         768,
+        None,
     )
     .unwrap();
     assert_eq!(provider.model_name(), "test-model");
@@ -129,6 +137,7 @@ fn api_key_accepted() {
         "nomic-embed".into(),
         Some("sk-test".into()),
         768,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -141,6 +150,7 @@ fn api_key_none_accepted() {
         "nomic-embed".into(),
         None,
         768,
+        None,
     );
     assert!(result.is_ok());
 }
@@ -160,7 +170,7 @@ async fn embed_produces_expected_dim_vector() {
         .parse()
         .expect("VLLM_TEST_DIMENSIONS must parse as u32");
 
-    let provider = VllmEmbeddingProvider::new(url, model, None, dimensions).unwrap();
+    let provider = VllmEmbeddingProvider::new(url, model, None, dimensions, None).unwrap();
     let vector = provider.embed("hello world").await.unwrap();
     assert_eq!(vector.len() as u32, dimensions);
 }
@@ -181,7 +191,7 @@ async fn embed_batch_preserves_order() {
         .parse()
         .expect("VLLM_TEST_DIMENSIONS must parse as u32");
 
-    let provider = VllmEmbeddingProvider::new(url, model, None, dimensions).unwrap();
+    let provider = VllmEmbeddingProvider::new(url, model, None, dimensions, None).unwrap();
     let inputs = ["a", "b", "c"];
     let vectors = provider.embed_batch(&inputs).await.unwrap();
 
