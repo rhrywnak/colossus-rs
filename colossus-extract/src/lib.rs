@@ -32,6 +32,7 @@ pub mod providers;
 pub mod resolver;
 pub mod schema;
 pub mod splitter;
+pub mod structure_splitter;
 pub mod traits;
 pub mod types;
 
@@ -53,6 +54,7 @@ pub use schema::{
     CompletenessRule, DocumentCategory, EntityCategory, ExtractionSchema, GroundingMode,
 };
 pub use splitter::FixedSizeSplitter;
+pub use structure_splitter::StructureAwareSplitter;
 pub use traits::{EmbeddingProvider, EntityResolver, LlmProvider, LlmResponse, TextSplitter};
 pub use types::{
     AtomicUnit, ExtractedEntity, ExtractedRelationship, ExtractionResult, GroundingStatus,

@@ -7,6 +7,7 @@ description = "Document extraction pipeline framework for Colossus applications"
 [dependencies]
 async-trait = "0.1"
 fastembed = "4"
+regex = "1"
 reqwest = { version = "0.12", features = ["json"] }
 schemars = "1"
 serde = { workspace = true }
