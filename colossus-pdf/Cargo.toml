@@ -12,6 +12,8 @@ tracing = { workspace = true }
 tempfile = "3"
 thiserror = "2"
 regex = { workspace = true }
+docx-rust = "0.1.11"
+mimetype-detector = "0.3.8"
 
 [dev-dependencies]
 tokio = { workspace = true }

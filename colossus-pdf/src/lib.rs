@@ -31,8 +31,10 @@
 
 mod classifier;
 mod document_extractor;
+mod docx_extractor;
 mod error;
 mod extractor;
+mod format_detection;
 mod normalize;
 mod page_grounder;
 mod pdf_oxide_adapter;
@@ -43,8 +45,10 @@ mod text_search;
 
 pub use classifier::{ContentType, PageClassification, PdfClassification};
 pub use document_extractor::{DocumentExtractor, ExtractedPage};
+pub use docx_extractor::DocxExtractor;
 pub use error::PdfError;
 pub use extractor::{PageText, PdfTextExtractor};
+pub use format_detection::{detect_format, extractor_for_format, DocumentFormat};
 pub use normalize::{normalize_text, NormalizationRule};
 pub use page_grounder::{GroundingResult, MatchType, PageGrounder};
 pub use pdf_oxide_adapter::PdfOxideAdapter;
