@@ -30,15 +30,23 @@
 //! ```
 
 mod classifier;
+mod document_extractor;
 mod error;
 mod extractor;
+mod normalize;
 mod page_grounder;
+mod pdf_oxide_adapter;
+mod plain_text_extractor;
 mod text_search;
 
 // --- Public API re-exports ---
 
 pub use classifier::{ContentType, PageClassification, PdfClassification};
+pub use document_extractor::{DocumentExtractor, ExtractedPage};
 pub use error::PdfError;
 pub use extractor::{PageText, PdfTextExtractor};
+pub use normalize::{normalize_text, NormalizationRule};
 pub use page_grounder::{GroundingResult, MatchType, PageGrounder};
+pub use pdf_oxide_adapter::PdfOxideAdapter;
+pub use plain_text_extractor::PlainTextExtractor;
 pub use text_search::{search_text, SearchConfig, SearchHit};

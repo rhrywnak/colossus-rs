@@ -11,6 +11,7 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tempfile = "3"
 thiserror = "2"
+regex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
