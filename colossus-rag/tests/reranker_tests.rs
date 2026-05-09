@@ -97,13 +97,6 @@ fn chunk(id: &str, content: &str, score: f32) -> ContextChunk {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn test_reranker_construction() {
-    let provider: Arc<dyn EmbeddingProvider> =
-        Arc::new(TestEmbeddingProvider::new_fixed(vec![1.0, 0.0], 2));
-    let _reranker = EmbeddingReranker::new(provider, 0.5);
-}
-
-#[tokio::test]
 async fn test_rerank_empty_input_returns_empty() {
     let stub = Arc::new(TestEmbeddingProvider::new_fixed(vec![1.0, 0.0], 2));
     let reranker = EmbeddingReranker::new(stub.clone() as Arc<dyn EmbeddingProvider>, 0.5);

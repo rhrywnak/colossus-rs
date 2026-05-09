@@ -154,38 +154,7 @@ fn make_synthesizer(result: Result<LlmResponse, String>) -> RigSynthesizer {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Test 1: Construction with a stub provider does not panic
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_rig_synthesizer_construction() {
-    let _ = make_synthesizer(Ok(LlmResponse {
-        text: "ok".into(),
-        input_tokens: None,
-        output_tokens: None,
-    }));
-}
-
-// ---------------------------------------------------------------------------
-// Test 2: RigSynthesizer implements the Synthesizer trait
-// ---------------------------------------------------------------------------
-
-/// Compile-test: if the `Synthesizer` trait impl is broken (wrong signature,
-/// missing `#[async_trait]`, etc.) this function will fail to compile.
-#[test]
-fn test_rig_synthesizer_implements_trait() {
-    fn takes_synthesizer(_: Box<dyn Synthesizer>) {}
-
-    let synth = make_synthesizer(Ok(LlmResponse {
-        text: "ok".into(),
-        input_tokens: None,
-        output_tokens: None,
-    }));
-    takes_synthesizer(Box::new(synth));
-}
-
-// ---------------------------------------------------------------------------
-// Test 3: Provider errors surface as RagError::SynthesisError
+// Test: Provider errors surface as RagError::SynthesisError
 // ---------------------------------------------------------------------------
 
 #[tokio::test]

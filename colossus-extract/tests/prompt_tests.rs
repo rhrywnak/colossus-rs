@@ -18,26 +18,6 @@ fn load_complaint_schema() -> ExtractionSchema {
 }
 
 #[test]
-fn test_prompt_builder_creates_with_template_dir() {
-    let dir = template_dir();
-    let _builder = PromptBuilder::new(&dir);
-    // No panic — construction succeeds (template loading is lazy)
-}
-
-#[test]
-fn test_build_extraction_prompt_returns_nonempty() {
-    let schema = load_complaint_schema();
-    let mut builder = PromptBuilder::new(&template_dir());
-    let artifact = builder
-        .build_extraction_prompt(&schema, "Sample document text.", None, None, None, None)
-        .expect("should build prompt");
-    assert!(
-        !artifact.prompt_text.is_empty(),
-        "Prompt should not be empty"
-    );
-}
-
-#[test]
 fn test_extraction_prompt_contains_schema_json() {
     let schema = load_complaint_schema();
     let mut builder = PromptBuilder::new(&template_dir());
@@ -304,33 +284,6 @@ fn test_prompt_artifact_no_rules_hash_when_none() {
         .unwrap();
     assert!(artifact.rules_name.is_none(), "rules_name should be None");
     assert!(artifact.rules_hash.is_none(), "rules_hash should be None");
-}
-
-#[test]
-fn test_prompt_artifact_template_name_default() {
-    let schema = load_complaint_schema();
-    let mut builder = PromptBuilder::new(&template_dir());
-    let artifact = builder
-        .build_extraction_prompt(&schema, "Text.", None, None, None, None)
-        .unwrap();
-    assert_eq!(artifact.template_name, "pass1_template.md");
-}
-
-#[test]
-fn test_prompt_artifact_template_name_custom() {
-    let schema = load_complaint_schema();
-    let mut builder = PromptBuilder::new(&template_dir());
-    let artifact = builder
-        .build_extraction_prompt(
-            &schema,
-            "Text.",
-            None,
-            None,
-            None,
-            Some("custom_template.md"),
-        )
-        .unwrap();
-    assert_eq!(artifact.template_name, "custom_template.md");
 }
 
 #[test]

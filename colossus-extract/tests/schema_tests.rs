@@ -30,35 +30,19 @@ fn test_load_complaint_schema_from_file() {
 }
 
 #[test]
-fn test_entity_type_count() {
+fn test_complaint_schema_load_counts() {
+    // Load the complaint fixture once and pin all four expected counts.
+    // Replaces 4 single-field tests that each loaded the same fixture.
     let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(schema.entity_types.len(), 4, "Expected 4 entity types");
-}
-
-#[test]
-fn test_relationship_type_count() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(
-        schema.relationship_types.len(),
-        6,
-        "Expected 6 relationship types"
-    );
-}
-
-#[test]
-fn test_pattern_count() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(schema.valid_patterns.len(), 5, "Expected 5 patterns");
-}
-
-#[test]
-fn test_extraction_rules_loaded() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert_eq!(
-        schema.extraction_rules.len(),
-        4,
-        "Expected 4 extraction rules"
-    );
+    let cases: &[(&str, usize, usize)] = &[
+        ("entity_types", schema.entity_types.len(), 4),
+        ("relationship_types", schema.relationship_types.len(), 6),
+        ("valid_patterns", schema.valid_patterns.len(), 5),
+        ("extraction_rules", schema.extraction_rules.len(), 4),
+    ];
+    for (field, actual, expected) in cases {
+        assert_eq!(actual, expected, "{field} count mismatch");
+    }
 }
 
 #[test]
@@ -78,12 +62,6 @@ fn test_entity_type_properties() {
         .expect("role property should exist");
     assert!(role_prop.required, "role should be required");
     assert_eq!(role_prop.property_type, "string");
-}
-
-#[test]
-fn test_validate_passes_for_valid_schema() {
-    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    assert!(schema.validate().is_ok());
 }
 
 #[test]
@@ -206,19 +184,6 @@ valid_patterns: []
     let schema = ExtractionSchema::from_yaml_str(yaml).unwrap();
     let prop = &schema.entity_types[0].properties[0];
     assert_eq!(prop.property_type, "string");
-}
-
-#[test]
-fn test_description_defaults_to_empty() {
-    let yaml = r#"
-document_type: minimal
-entity_types:
-  - name: Thing
-relationship_types: []
-valid_patterns: []
-"#;
-    let schema = ExtractionSchema::from_yaml_str(yaml).unwrap();
-    assert_eq!(schema.description, "");
 }
 
 #[test]

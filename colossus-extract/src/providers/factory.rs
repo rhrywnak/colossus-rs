@@ -426,48 +426,31 @@ mod tests {
     }
 
     #[test]
-    fn parse_llm_temperature_unset_returns_none() {
-        let lookup = |_: &str| -> Option<String> { None };
-        assert_eq!(parse_llm_temperature(&lookup), None);
-    }
+    fn parse_llm_temperature_cases() {
+        // (env_value, expected) — None means LLM_TEMPERATURE unset.
+        // Invalid values fall back to None (do not block startup) with a
+        // warning log; the API default takes over.
+        let cases: &[(Option<&str>, Option<f64>)] = &[
+            (None, None),                 // unset
+            (Some("0"), Some(0.0)),       // explicit zero (deterministic extraction)
+            (Some("0.7"), Some(0.7)),     // explicit float
+            (Some("not-a-number"), None), // unparseable → fallback
+        ];
 
-    #[test]
-    fn parse_llm_temperature_zero_returns_some_zero() {
-        let lookup = |key: &str| -> Option<String> {
-            if key == "LLM_TEMPERATURE" {
-                Some("0".to_string())
-            } else {
-                None
-            }
-        };
-        assert_eq!(parse_llm_temperature(&lookup), Some(0.0));
-    }
-
-    #[test]
-    fn parse_llm_temperature_float_parses() {
-        let lookup = |key: &str| -> Option<String> {
-            if key == "LLM_TEMPERATURE" {
-                Some("0.7".to_string())
-            } else {
-                None
-            }
-        };
-        assert_eq!(parse_llm_temperature(&lookup), Some(0.7));
-    }
-
-    /// Invalid values MUST NOT fail construction — they fall back to None with
-    /// a warning log. A garbled env var should not block startup; the API
-    /// default (or an explicit in-code override) is a better fallback.
-    #[test]
-    fn parse_llm_temperature_invalid_returns_none() {
-        let lookup = |key: &str| -> Option<String> {
-            if key == "LLM_TEMPERATURE" {
-                Some("not-a-number".to_string())
-            } else {
-                None
-            }
-        };
-        assert_eq!(parse_llm_temperature(&lookup), None);
+        for (env_value, expected) in cases {
+            let lookup = |key: &str| -> Option<String> {
+                if key == "LLM_TEMPERATURE" {
+                    env_value.map(|s| s.to_string())
+                } else {
+                    None
+                }
+            };
+            assert_eq!(
+                parse_llm_temperature(&lookup),
+                *expected,
+                "case: LLM_TEMPERATURE={env_value:?}",
+            );
+        }
     }
 
     #[test]

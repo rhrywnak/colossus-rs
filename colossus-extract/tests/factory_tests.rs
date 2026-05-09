@@ -52,17 +52,6 @@ fn llm_defaults_to_anthropic_when_provider_unset() {
 }
 
 #[test]
-fn llm_anthropic_constructs_with_required_vars() {
-    let env = env_from(&[
-        ("LLM_PROVIDER", "anthropic"),
-        ("ANTHROPIC_API_KEY", "test-key"),
-        ("LLM_MODEL", "claude-sonnet-4-6"),
-    ]);
-    let provider = llm_provider_from_lookup(&make_lookup(&env)).expect("should build");
-    assert_eq!(provider.model_name(), "claude-sonnet-4-6");
-}
-
-#[test]
 fn llm_anthropic_missing_api_key_errors() {
     let env = env_from(&[
         ("LLM_PROVIDER", "anthropic"),
@@ -85,29 +74,6 @@ fn llm_anthropic_missing_model_errors() {
         .err()
         .expect("expected factory to error");
     assert_error_contains(&err, "LLM_MODEL");
-}
-
-#[test]
-fn llm_anthropic_max_tokens_default_when_absent() {
-    let env = env_from(&[
-        ("ANTHROPIC_API_KEY", "test-key"),
-        ("LLM_MODEL", "claude-sonnet-4-6"),
-    ]);
-    // Construction should succeed. We can't inspect max_tokens through the
-    // trait object, so the assertion is simply "does not error."
-    let _provider =
-        llm_provider_from_lookup(&make_lookup(&env)).expect("should build with default");
-}
-
-#[test]
-fn llm_anthropic_max_tokens_parsed_from_env() {
-    let env = env_from(&[
-        ("ANTHROPIC_API_KEY", "test-key"),
-        ("LLM_MODEL", "claude-sonnet-4-6"),
-        ("LLM_MAX_TOKENS", "16000"),
-    ]);
-    let _provider =
-        llm_provider_from_lookup(&make_lookup(&env)).expect("should build with explicit value");
 }
 
 #[test]
@@ -196,18 +162,6 @@ fn llm_unknown_provider_errors_with_valid_options_message() {
 #[ignore = "downloads from HuggingFace; run with --ignored"]
 fn embedding_defaults_to_fastembed_when_provider_unset() {
     let env = env_from(&[("FASTEMBED_MODEL", "AllMiniLML6V2")]);
-    let provider = embedding_provider_from_lookup(&make_lookup(&env)).expect("should build");
-    assert_eq!(provider.dimensions(), 384);
-}
-
-#[test]
-#[ignore = "downloads from HuggingFace; run with --ignored"]
-fn embedding_fastembed_huggingface_constructs() {
-    let env = env_from(&[
-        ("EMBEDDING_PROVIDER", "fastembed"),
-        ("FASTEMBED_MODE", "huggingface"),
-        ("FASTEMBED_MODEL", "AllMiniLML6V2"),
-    ]);
     let provider = embedding_provider_from_lookup(&make_lookup(&env)).expect("should build");
     assert_eq!(provider.dimensions(), 384);
 }

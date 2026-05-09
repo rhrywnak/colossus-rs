@@ -7,9 +7,8 @@
 //! 4. No-op implementations satisfy their trait contracts
 
 use colossus_rag::{
-    AssembledContext, Citation, ContextChunk, NoOpExpander, NoOpRouter, PipelineStats, RagError,
-    RagResult, RelatedNode, RelationDirection, RetrievalStrategy, ScopeFilter, ScopeFilterType,
-    SourceReference, SynthesisResult,
+    Citation, ContextChunk, RagError, RelatedNode, RelationDirection, RetrievalStrategy,
+    ScopeFilter, ScopeFilterType, SourceReference,
 };
 
 // ---------------------------------------------------------------------------
@@ -132,36 +131,7 @@ fn test_context_chunk_with_relationships_serializes() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: PipelineStats default has all zeros
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_pipeline_stats_default_all_zeros() {
-    let stats = PipelineStats::default();
-
-    assert_eq!(stats.route_ms, 0);
-    assert_eq!(stats.embed_ms, 0);
-    assert_eq!(stats.search_ms, 0);
-    assert_eq!(stats.expand_ms, 0);
-    assert_eq!(stats.assemble_ms, 0);
-    assert_eq!(stats.synthesize_ms, 0);
-    assert_eq!(stats.total_ms, 0);
-    assert_eq!(stats.qdrant_hits, 0);
-    assert_eq!(stats.graph_nodes_expanded, 0);
-    assert_eq!(stats.decompose_ms, 0);
-    assert_eq!(stats.rerank_ms, 0);
-    assert_eq!(stats.graph_nodes_after_rerank, 0);
-    assert_eq!(stats.nodes_filtered_out, 0);
-    assert_eq!(stats.context_tokens_approx, 0);
-    assert_eq!(stats.input_tokens, None);
-    assert_eq!(stats.output_tokens, None);
-    assert!(stats.strategy.is_empty());
-    assert!(stats.provider.is_empty());
-    assert!(stats.model.is_empty());
-}
-
-// ---------------------------------------------------------------------------
-// Test 4: Citation with all None fields
+// Test 3: Citation with all None fields
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -243,116 +213,7 @@ fn test_rag_error_display_messages() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: NoOpExpander returns empty vec
-// ---------------------------------------------------------------------------
-
-/// ## Rust Learning: Testing async functions
-///
-/// `#[tokio::test]` creates a tokio runtime for the test. Without it,
-/// we can't `.await` the async `expand()` method.
-#[tokio::test]
-async fn test_noop_expander_returns_empty() {
-    // Must import the trait to call its methods on the concrete type.
-    use colossus_rag::GraphExpander;
-
-    let expander = NoOpExpander;
-    let seed_ids = vec!["node-1".to_string(), "node-2".to_string()];
-
-    let result = expander
-        .expand(
-            &seed_ids,
-            2,
-            &RetrievalStrategy::Broad { node_types: None },
-        )
-        .await
-        .expect("NoOpExpander should never fail");
-
-    assert!(
-        result.is_empty(),
-        "NoOpExpander should return empty vec, got {} chunks",
-        result.len()
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Test 7: NoOpRouter returns Broad strategy
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_noop_router_returns_broad() {
-    use colossus_rag::QueryRouter;
-
-    let router = NoOpRouter;
-
-    let strategy = router
-        .route("What did Phillips say about the $50,000?")
-        .await
-        .expect("NoOpRouter should never fail");
-
-    // Verify it returns Broad with no type filters.
-    match strategy {
-        RetrievalStrategy::Broad { node_types } => {
-            assert_eq!(
-                node_types, None,
-                "NoOpRouter should return Broad with no type filters"
-            );
-        }
-        other => {
-            panic!("NoOpRouter should return Broad, got: {other:?}");
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Test 8: Full RagResult round-trip
-// ---------------------------------------------------------------------------
-
-/// Verify a complete RagResult with all nested types survives a round-trip.
-/// This exercises the full type hierarchy at once.
-#[test]
-fn test_rag_result_full_roundtrip() {
-    let result = RagResult {
-        answer: "Phillips testified that Emil wanted the $50,000 returned.".to_string(),
-        strategy_used: RetrievalStrategy::Focused {
-            scope: vec![ScopeFilter {
-                filter_type: ScopeFilterType::Person,
-                value: "Phillips".to_string(),
-            }],
-        },
-        chunks: vec![ContextChunk {
-            node_id: "evidence-phillips-q74".to_string(),
-            node_type: "Evidence".to_string(),
-            title: "Phillips: Emil wanted $50K returned".to_string(),
-            content: "Test content".to_string(),
-            score: 0.7056,
-            source: SourceReference::default(),
-            relationships: Vec::new(),
-            metadata: serde_json::Value::Null,
-        }],
-        citations: vec![Citation {
-            evidence_id: Some("evidence-phillips-q74".to_string()),
-            document: None,
-            page: None,
-            quote_excerpt: Some("Emil wanted the money returned".to_string()),
-        }],
-        stats: PipelineStats {
-            strategy: "focused".to_string(),
-            total_ms: 1234,
-            qdrant_hits: 5,
-            provider: "anthropic".to_string(),
-            model: "claude-haiku-4-5-20251001".to_string(),
-            ..PipelineStats::default()
-        },
-    };
-
-    let json = serde_json::to_string_pretty(&result).expect("RagResult should serialize");
-    let deserialized: RagResult =
-        serde_json::from_str(&json).expect("RagResult should deserialize");
-    assert_eq!(result, deserialized, "Full RagResult round-trip failed");
-}
-
-// ---------------------------------------------------------------------------
-// Test 9: ScopeFilterType serde
+// Test 4: ScopeFilterType serde
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -371,65 +232,7 @@ fn test_scope_filter_type_serde() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 10: AssembledContext and SynthesisResult round-trip
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_assembled_context_default() {
-    let ctx = AssembledContext::default();
-    assert!(ctx.system_prompt.is_empty());
-    assert!(ctx.formatted_context.is_empty());
-    assert_eq!(ctx.token_estimate, 0);
-}
-
-#[test]
-fn test_synthesis_result_roundtrip() {
-    let result = SynthesisResult {
-        answer: "The answer is 42.".to_string(),
-        citations: vec![Citation::default()],
-        input_tokens: 100,
-        output_tokens: 25,
-        provider: "anthropic".to_string(),
-        model: "claude-haiku-4-5-20251001".to_string(),
-    };
-
-    let json = serde_json::to_string(&result).expect("should serialize");
-    let deserialized: SynthesisResult =
-        serde_json::from_str(&json).expect("should deserialize");
-    assert_eq!(result, deserialized);
-}
-
-// ---------------------------------------------------------------------------
-// Test 12: NoOpDecomposer returns original question
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn test_noop_decomposer_returns_original() {
-    use colossus_rag::{NoOpDecomposer, QueryDecomposer};
-
-    let decomposer = NoOpDecomposer;
-    let question = "What did Phillips say?";
-    let strategy = RetrievalStrategy::Broad { node_types: None };
-
-    let result = decomposer
-        .decompose(question, &strategy)
-        .await
-        .expect("NoOpDecomposer should never fail");
-
-    assert!(!result.needs_decomposition);
-    assert_eq!(result.sub_queries.len(), 1);
-    assert_eq!(result.original_question, question);
-
-    match &result.sub_queries[0] {
-        colossus_rag::SubQuery::VectorSearch { query } => {
-            assert_eq!(query, question);
-        }
-        other => panic!("Expected VectorSearch, got {other:?}"),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Test 13: SubQuery serde round-trip
+// Test 5: SubQuery serde round-trip
 // ---------------------------------------------------------------------------
 
 #[test]

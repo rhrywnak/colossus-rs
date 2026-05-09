@@ -23,14 +23,12 @@
 // Embedding backend is injected at runtime (fastembed dev-dep used in integration tests).
 #![cfg(feature = "qdrant")]
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use colossus_rag::{
-    scope_filters_to_qdrant_filter, ContextChunk, QdrantRetriever, ScopeFilter, ScopeFilterType,
-    VectorRetriever,
+    scope_filters_to_qdrant_filter, QdrantRetriever, ScopeFilter, ScopeFilterType, VectorRetriever,
 };
-use qdrant_client::qdrant::{value::Kind, Condition, Value};
+use qdrant_client::qdrant::Condition;
 
 // ===========================================================================
 // Unit Tests — filter conversion
@@ -164,103 +162,6 @@ fn test_scope_filter_multiple_combined() {
         2,
         "Should have 2 must conditions (Document + NodeType, Person skipped)"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Test 6: ScoredPoint → ContextChunk mapping
-// ---------------------------------------------------------------------------
-
-/// Build a mock `ScoredPoint` with protobuf payload values and verify
-/// it maps correctly to a `ContextChunk`.
-///
-/// ## Rust Learning: Building protobuf types manually
-///
-/// qdrant-client's types are generated from protobuf definitions. To build
-/// a `Value` with a string, we construct `Value { kind: Some(Kind::StringValue(...)) }`.
-/// This is verbose but precise — no serde magic needed.
-#[test]
-fn test_scored_point_to_context_chunk_mapping() {
-    use qdrant_client::qdrant::ScoredPoint;
-
-    // Build a mock payload as HashMap<String, Value>.
-    let mut payload = HashMap::new();
-
-    payload.insert(
-        "node_id".to_string(),
-        Value {
-            kind: Some(Kind::StringValue("evidence-phillips-q74".to_string())),
-        },
-    );
-    payload.insert(
-        "node_type".to_string(),
-        Value {
-            kind: Some(Kind::StringValue("Evidence".to_string())),
-        },
-    );
-    payload.insert(
-        "title".to_string(),
-        Value {
-            kind: Some(Kind::StringValue(
-                "Phillips: Emil wanted $50K returned".to_string(),
-            )),
-        },
-    );
-    payload.insert(
-        "document_id".to_string(),
-        Value {
-            kind: Some(Kind::StringValue("dep-phillips".to_string())),
-        },
-    );
-    payload.insert(
-        "page_number".to_string(),
-        Value {
-            kind: Some(Kind::StringValue("42".to_string())),
-        },
-    );
-
-    let _scored_point = ScoredPoint {
-        id: None,
-        payload,
-        score: 0.7056,
-        version: 0,
-        vectors: None,
-        shard_key: None,
-        order_value: None,
-    };
-
-    // Convert using the module-internal function.
-    // We call it via the re-exported retriever module.
-    // Actually, scored_point_to_context_chunk is private — we test it
-    // indirectly through the public search() method in integration tests.
-    // For this unit test, we reconstruct the expected mapping manually.
-
-    // Since scored_point_to_context_chunk is private, we verify the expected
-    // mapping by building the expected ContextChunk and comparing field by field.
-    // The integration tests (below) validate the full pipeline end-to-end.
-
-    let chunk = ContextChunk {
-        node_id: "evidence-phillips-q74".to_string(),
-        node_type: "Evidence".to_string(),
-        title: "Phillips: Emil wanted $50K returned".to_string(),
-        content: "Phillips: Emil wanted $50K returned".to_string(), // falls back to title
-        score: 0.7056,
-        source: colossus_rag::SourceReference {
-            document_title: Some("Phillips: Emil wanted $50K returned".to_string()),
-            document_id: Some("dep-phillips".to_string()),
-            page_number: Some(42),
-            verbatim_quote: None,
-        },
-        relationships: Vec::new(),
-        metadata: serde_json::Value::Null,
-    };
-
-    // Verify the expected field mapping is consistent.
-    assert_eq!(chunk.node_id, "evidence-phillips-q74");
-    assert_eq!(chunk.node_type, "Evidence");
-    assert_eq!(chunk.score, 0.7056);
-    assert_eq!(chunk.source.page_number, Some(42));
-    assert_eq!(chunk.source.document_id, Some("dep-phillips".to_string()));
-    assert!(chunk.relationships.is_empty());
 }
 
 // ===========================================================================

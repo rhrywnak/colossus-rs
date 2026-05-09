@@ -126,49 +126,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fixes_missing_space_after_paragraph_number() {
-        let input = "10.During the pendency of the guardianship";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(result, "10. During the pendency of the guardianship");
-    }
+    fn fix_numbered_paragraph_spacing_cases() {
+        // (input, expected) — pin both the FIX cases and the PRESERVE
+        // (no-modification) cases. Lowercase-after-dot guards against
+        // false positives on abbreviations (e.g., "i.e."); decimal
+        // guard prevents "$50,000.00" → "$50,000. 00".
+        let cases: &[(&str, &str)] = &[
+            // basic fix
+            (
+                "10.During the pendency of the guardianship",
+                "10. During the pendency of the guardianship",
+            ),
+            // already-spaced preserved
+            (
+                "10. During the pendency of the guardianship",
+                "10. During the pendency of the guardianship",
+            ),
+            // decimal guard
+            (
+                "The amount was $50,000.00 in total",
+                "The amount was $50,000.00 in total",
+            ),
+            // multi-line
+            (
+                "10.During the case\n11.Although the court\n12.It was revealed",
+                "10. During the case\n11. Although the court\n12. It was revealed",
+            ),
+            // 3-digit number
+            (
+                "126.Plaintiff has been harmed",
+                "126. Plaintiff has been harmed",
+            ),
+            // lowercase-after-dot guard
+            ("1.example text", "1.example text"),
+        ];
 
-    #[test]
-    fn preserves_space_when_already_present() {
-        let input = "10. During the pendency of the guardianship";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(result, "10. During the pendency of the guardianship");
-    }
-
-    #[test]
-    fn does_not_modify_decimal_numbers() {
-        let input = "The amount was $50,000.00 in total";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(result, "The amount was $50,000.00 in total");
-    }
-
-    #[test]
-    fn fixes_multiple_paragraphs() {
-        let input = "10.During the case\n11.Although the court\n12.It was revealed";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(
-            result,
-            "10. During the case\n11. Although the court\n12. It was revealed"
-        );
-    }
-
-    #[test]
-    fn handles_three_digit_paragraph_numbers() {
-        let input = "126.Plaintiff has been harmed";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(result, "126. Plaintiff has been harmed");
-    }
-
-    #[test]
-    fn does_not_modify_lowercase_after_dot() {
-        // e.g., abbreviations like "e.g." or "i.e."
-        let input = "1.example text";
-        let result = fix_numbered_paragraph_spacing(input);
-        assert_eq!(result, "1.example text");
+        for (input, expected) in cases {
+            let result = fix_numbered_paragraph_spacing(input);
+            assert_eq!(result, *expected, "case: {input:?}");
+        }
     }
 
     #[test]

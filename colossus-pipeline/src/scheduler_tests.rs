@@ -142,14 +142,6 @@ async fn set_status(db: &PgPool, job_id: Uuid, status: &str) {
 
 // ── Tests ───────────────────────────────────────────────────────────
 
-#[tokio::test]
-async fn test_scheduler_construction() {
-    let db =
-        PgPool::connect_lazy("postgres://invalid:5432/none").expect("connect_lazy should not fail");
-    let scheduler = Scheduler::new(&db);
-    drop(scheduler);
-}
-
 /// Submit a job and verify the returned UUID can be fetched.
 #[tokio::test]
 #[ignore]

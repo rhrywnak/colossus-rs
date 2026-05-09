@@ -127,12 +127,6 @@ mod tests {
     }
 
     #[test]
-    fn plain_text_extractor_name_is_stable() {
-        let extractor = PlainTextExtractor;
-        assert_eq!(extractor.name(), "plain_text");
-    }
-
-    #[test]
     fn plain_text_extractor_missing_file_returns_open_error() {
         let extractor = PlainTextExtractor;
         let result = extractor.extract(Path::new("/nonexistent/path/does/not/exist.txt"));

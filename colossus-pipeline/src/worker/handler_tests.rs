@@ -152,11 +152,6 @@ async fn cleanup(db: &PgPool, job_id: Uuid) {
 
 // ── Tests ───────────────────────────────────────────────────────────
 
-#[test]
-fn test_handler_module_compiles() {
-    assert!(true);
-}
-
 /// Success(Next) → advance to next step.
 #[tokio::test]
 #[ignore]

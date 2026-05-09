@@ -87,23 +87,6 @@ async fn cleanup(db: &PgPool, job_id: Uuid) {
 
 // ── Tests ───────────────────────────────────────────────────────────
 
-#[test]
-fn test_recovery_module_compiles() {
-    // Ensures recovery.rs compiles and is linked into the test binary.
-    // The real verification is the ignored integration tests below.
-    assert!(true);
-}
-
-/// Empty table — recover_orphans should succeed with no work to do.
-#[tokio::test]
-#[ignore]
-async fn test_recover_orphans_no_zombies_no_timeouts() {
-    let db = test_db().await;
-    let config = test_config();
-    let result = recover_orphans(&db, &config).await;
-    assert!(result.is_ok(), "recover_orphans should succeed on empty table");
-}
-
 /// Stale heartbeat with retries remaining → reset to ready.
 #[tokio::test]
 #[ignore]

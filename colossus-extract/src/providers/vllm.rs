@@ -401,22 +401,3 @@ impl LlmProvider for VllmProvider {
         false
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A non-default `request_timeout_secs` must be accepted without error
-    /// — covers the new constructor path added by Phase 1c.
-    #[test]
-    fn provider_new_accepts_custom_timeout() {
-        let provider = VllmProvider::new(
-            "http://localhost:8000".to_string(),
-            "test-model".to_string(),
-            None,
-            32_000,
-            Some(1800),
-        );
-        assert!(provider.is_ok(), "Custom timeout must be accepted");
-    }
-}

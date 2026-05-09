@@ -1,17 +1,5 @@
 use colossus_extract::EmbeddingProvider;
 
-/// Verifies that `EmbeddingProvider` is dyn-compatible (object-safe) when used
-/// with `FastembedProvider`.
-///
-/// Object safety is required because embedding providers are stored as
-/// `Arc<dyn EmbeddingProvider>` in `AppContext`. This compile-only test does not
-/// construct a live provider — that requires downloading a model from HuggingFace,
-/// which is slow (~50MB) and may fail without network access.
-#[test]
-fn fastembed_provider_is_object_safe() {
-    let _: Option<Box<dyn EmbeddingProvider>> = None;
-}
-
 /// Constructs a real `FastembedProvider`, downloads the smallest model, and
 /// verifies that `embed()` returns a vector of the expected dimension.
 ///

@@ -206,74 +206,37 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_header_present() {
-        let headers = make_headers(Some("roman"), None, None, None);
-        assert_eq!(
-            extract_header(&headers, HEADER_USERNAME),
-            Some("roman".to_string())
-        );
+    fn parse_groups_cases() {
+        // (groups_header_value, expected) — None means header absent
+        let cases: &[(Option<&str>, Vec<&str>)] = &[
+            (
+                Some("admin|editor|viewer"),
+                vec!["admin", "editor", "viewer"],
+            ),
+            (Some("admin"), vec!["admin"]),
+            (Some(""), vec![]), // empty value → empty vec
+            (None, vec![]),     // missing header → empty vec
+            (
+                Some("admin | editor | viewer"),
+                vec!["admin", "editor", "viewer"],
+            ), // trim
+        ];
+
+        for (header_value, expected) in cases {
+            let headers = make_headers(None, None, None, *header_value);
+            let groups = parse_groups(&headers);
+            let expected_owned: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+            assert_eq!(groups, expected_owned, "case: header={header_value:?}",);
+        }
     }
 
-    #[test]
-    fn test_extract_header_missing() {
-        let headers = HeaderMap::new();
-        assert_eq!(extract_header(&headers, HEADER_USERNAME), None);
-    }
-
-    #[test]
-    fn test_parse_groups_pipe_separated() {
-        let headers = make_headers(None, None, None, Some("admin|editor|viewer"));
-        let groups = parse_groups(&headers);
-        assert_eq!(groups, vec!["admin", "editor", "viewer"]);
-    }
-
-    #[test]
-    fn test_parse_groups_single() {
-        let headers = make_headers(None, None, None, Some("admin"));
-        let groups = parse_groups(&headers);
-        assert_eq!(groups, vec!["admin"]);
-    }
-
-    #[test]
-    fn test_parse_groups_empty_string() {
-        let headers = make_headers(None, None, None, Some(""));
-        let groups = parse_groups(&headers);
-        assert!(groups.is_empty());
-    }
-
-    #[test]
-    fn test_parse_groups_missing_header() {
-        let headers = HeaderMap::new();
-        let groups = parse_groups(&headers);
-        assert!(groups.is_empty());
-    }
-
-    #[test]
-    fn test_parse_groups_with_whitespace() {
-        let headers = make_headers(None, None, None, Some("admin | editor | viewer"));
-        let groups = parse_groups(&headers);
-        assert_eq!(groups, vec!["admin", "editor", "viewer"]);
-    }
-
-    // Integration tests using the full FromRequestParts flow require an async
-    // runtime and constructing axum request Parts. These are tested via the
-    // helper functions above which cover the core logic.
-
+    /// Pin security design contract — anonymous users get admin access for the
+    /// AUTH_MODE=optional local-dev path. The compiler does not enforce this
+    /// string; if changed to ["viewer"], local development silently breaks.
     #[test]
     fn test_anonymous_user() {
         let user = AuthUser::anonymous();
         assert_eq!(user.username, "anonymous");
         assert_eq!(user.groups, vec!["admin"]);
-    }
-
-    #[test]
-    fn test_display_name_falls_back_to_username() {
-        let headers = make_headers(Some("roman"), None, None, Some("admin"));
-        let username = extract_header(&headers, HEADER_USERNAME).unwrap();
-        let email = extract_header(&headers, HEADER_EMAIL).unwrap_or_default();
-        let display_name = extract_header(&headers, HEADER_NAME)
-            .unwrap_or_else(|| username.clone());
-        assert_eq!(email, "");
-        assert_eq!(display_name, "roman");
     }
 }

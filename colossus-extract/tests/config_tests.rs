@@ -24,181 +24,103 @@ fn sample_config() -> HashMap<String, serde_json::Value> {
     map
 }
 
-// --- get_str tests ---
+// --- get_* tests (consolidated routing-table arms per ConfigAccess method) ---
+//
+// Each test exercises one method across (key, default, expected) tuples
+// covering: present-and-typed, missing, wrong-type, and any
+// method-specific edge cases (empty string preserved, negative-number
+// safety for u64, integer→f64 conversion).
 
 #[test]
-fn test_get_str_returns_value_when_present() {
+fn test_get_str_cases() {
     let config = sample_config();
-    let result = config.get_str("mode", "full");
-    assert_eq!(
-        result, "structured",
-        "Must return the actual value, not the default"
-    );
+    let cases: &[(&str, &str, &str)] = &[
+        ("mode", "fallback", "structured"),                // present
+        ("nonexistent_key", "fallback", "fallback"),       // missing → default
+        ("units_per_chunk", "default_str", "default_str"), // wrong type → default
+        ("empty_string", "should_not_see_this", ""),       // empty string preserved
+    ];
+    for (key, default, expected) in cases {
+        assert_eq!(
+            config.get_str(key, default),
+            *expected,
+            "case: get_str({key:?}, {default:?})",
+        );
+    }
 }
 
 #[test]
-fn test_get_str_returns_default_when_missing() {
+fn test_get_i64_cases() {
     let config = sample_config();
-    let result = config.get_str("nonexistent_key", "fallback");
-    assert_eq!(result, "fallback", "Missing key must return default");
+    let cases: &[(&str, i64, i64)] = &[
+        ("units_per_chunk", 10, 25), // present
+        ("nonexistent_key", 42, 42), // missing → default
+        ("mode", 99, 99),            // wrong type (string) → default
+        ("negative_number", 0, -5),  // negative numbers preserved
+    ];
+    for (key, default, expected) in cases {
+        assert_eq!(
+            config.get_i64(key, *default),
+            *expected,
+            "case: get_i64({key:?}, {default})",
+        );
+    }
 }
 
 #[test]
-fn test_get_str_returns_default_when_wrong_type() {
-    // "units_per_chunk" is a number (25), not a string
+fn test_get_u64_cases() {
+    // Safety case: serde_json::Value::as_u64() returns None for negative
+    // numbers, so -5 in YAML must NOT wrap to a huge positive u64.
     let config = sample_config();
-    let result = config.get_str("units_per_chunk", "default_str");
-    assert_eq!(
-        result, "default_str",
-        "Non-string value must return default, not a stringified number"
-    );
+    let cases: &[(&str, u64, u64)] = &[
+        ("timeout_secs", 600, 1800),   // present
+        ("nonexistent_key", 600, 600), // missing → default
+        ("negative_number", 100, 100), // negative → default (no wrap)
+    ];
+    for (key, default, expected) in cases {
+        assert_eq!(
+            config.get_u64(key, *default),
+            *expected,
+            "case: get_u64({key:?}, {default})",
+        );
+    }
 }
 
 #[test]
-fn test_get_str_returns_empty_string_when_value_is_empty() {
+fn test_get_bool_cases() {
     let config = sample_config();
-    let result = config.get_str("empty_string", "should_not_see_this");
-    assert_eq!(
-        result, "",
-        "Empty string IS a valid string — must not fall through to default"
-    );
-}
-
-// --- get_i64 tests ---
-
-#[test]
-fn test_get_i64_returns_value_when_present() {
-    let config = sample_config();
-    let result = config.get_i64("units_per_chunk", 10);
-    assert_eq!(result, 25, "Must return the actual value, not the default");
-}
-
-#[test]
-fn test_get_i64_returns_default_when_missing() {
-    let config = sample_config();
-    let result = config.get_i64("nonexistent_key", 42);
-    assert_eq!(result, 42, "Missing key must return default");
+    let cases: &[(&str, bool, bool)] = &[
+        ("enabled", false, true),        // present
+        ("nonexistent_key", true, true), // missing → default
+        ("mode", false, false),          // wrong type (string) → default (no truthy coercion)
+    ];
+    for (key, default, expected) in cases {
+        assert_eq!(
+            config.get_bool(key, *default),
+            *expected,
+            "case: get_bool({key:?}, {default})",
+        );
+    }
 }
 
 #[test]
-fn test_get_i64_returns_default_when_wrong_type() {
-    // "mode" is a string ("structured"), not a number
+fn test_get_f64_cases() {
+    // JSON integer 25 should be readable as f64 25.0 — Value::as_f64()
+    // handles this conversion.
     let config = sample_config();
-    let result = config.get_i64("mode", 99);
-    assert_eq!(
-        result, 99,
-        "String value must return default, not panic or 0"
-    );
-}
-
-#[test]
-fn test_get_i64_handles_negative_numbers() {
-    let config = sample_config();
-    let result = config.get_i64("negative_number", 0);
-    assert_eq!(result, -5, "Negative numbers must be returned correctly");
-}
-
-// --- get_u64 tests ---
-
-#[test]
-fn test_get_u64_returns_value_when_present() {
-    let config = sample_config();
-    let result = config.get_u64("timeout_secs", 600);
-    assert_eq!(
-        result, 1800,
-        "Must return the actual value, not the default"
-    );
-}
-
-#[test]
-fn test_get_u64_returns_default_when_missing() {
-    let config = sample_config();
-    let result = config.get_u64("nonexistent_key", 600);
-    assert_eq!(result, 600, "Missing key must return default");
-}
-
-#[test]
-fn test_get_u64_returns_default_for_negative_number() {
-    // This is the safety case: -5 in YAML should NOT become a huge u64.
-    // serde_json::Value::as_u64() returns None for negative numbers.
-    let config = sample_config();
-    let result = config.get_u64("negative_number", 100);
-    assert_eq!(
-        result, 100,
-        "Negative number must return default, not wrap to a huge positive value"
-    );
-}
-
-// --- get_bool tests ---
-
-#[test]
-fn test_get_bool_returns_value_when_present() {
-    let config = sample_config();
-    let result = config.get_bool("enabled", false);
-    assert!(result, "Must return true, not the false default");
-}
-
-#[test]
-fn test_get_bool_returns_default_when_missing() {
-    let config = sample_config();
-    let result = config.get_bool("nonexistent_key", true);
-    assert!(result, "Missing key must return default");
-}
-
-#[test]
-fn test_get_bool_returns_default_when_wrong_type() {
-    // "mode" is a string, not a boolean
-    let config = sample_config();
-    let result = config.get_bool("mode", false);
-    assert!(
-        !result,
-        "String value must return default, not truthy coercion"
-    );
-}
-
-// --- get_f64 tests ---
-
-#[test]
-fn test_get_f64_returns_value_when_present() {
-    let config = sample_config();
-    let result = config.get_f64("threshold", 0.5);
-    assert!(
-        (result - 0.85).abs() < f64::EPSILON,
-        "Must return 0.85, not the 0.5 default. Got: {result}"
-    );
-}
-
-#[test]
-fn test_get_f64_returns_default_when_missing() {
-    let config = sample_config();
-    let result = config.get_f64("nonexistent_key", 0.5);
-    assert!(
-        (result - 0.5).abs() < f64::EPSILON,
-        "Missing key must return default"
-    );
-}
-
-#[test]
-fn test_get_f64_returns_default_when_wrong_type() {
-    // "mode" is a string, not a number
-    let config = sample_config();
-    let result = config.get_f64("mode", 1.0);
-    assert!(
-        (result - 1.0).abs() < f64::EPSILON,
-        "String value must return default, not panic or 0.0"
-    );
-}
-
-#[test]
-fn test_get_f64_reads_integer_as_f64() {
-    // JSON integer 25 should be readable as f64 25.0
-    // serde_json::Value::as_f64() handles this conversion
-    let config = sample_config();
-    let result = config.get_f64("units_per_chunk", 0.0);
-    assert!(
-        (result - 25.0).abs() < f64::EPSILON,
-        "Integer value must be readable as f64. Got: {result}"
-    );
+    let cases: &[(&str, f64, f64)] = &[
+        ("threshold", 0.5, 0.85),       // present (float)
+        ("nonexistent_key", 0.5, 0.5),  // missing → default
+        ("mode", 1.0, 1.0),             // wrong type (string) → default
+        ("units_per_chunk", 0.0, 25.0), // integer readable as f64
+    ];
+    for (key, default, expected) in cases {
+        let actual = config.get_f64(key, *default);
+        assert!(
+            (actual - expected).abs() < f64::EPSILON,
+            "case: get_f64({key:?}, {default}) — expected {expected}, got {actual}",
+        );
+    }
 }
 
 // --- empty map tests ---

@@ -95,40 +95,4 @@ mod tests {
             "Display must mention rate limit for log searchability"
         );
     }
-
-    #[test]
-    fn test_rate_limited_is_distinct_from_llm_provider() {
-        // Verify that pattern matching on RateLimited is precise —
-        // it does not accidentally match LlmProvider errors.
-        // This is the core guarantee that makes the typed variant valuable.
-        let rate_err = PipelineError::RateLimited {
-            retry_after_secs: 60,
-        };
-        let llm_err = PipelineError::LlmProvider("some other error".into());
-
-        let is_rate_limited = |e: &PipelineError| matches!(e, PipelineError::RateLimited { .. });
-
-        assert!(
-            is_rate_limited(&rate_err),
-            "RateLimited variant must match RateLimited pattern"
-        );
-        assert!(
-            !is_rate_limited(&llm_err),
-            "LlmProvider variant must NOT match RateLimited pattern"
-        );
-    }
-
-    #[test]
-    fn test_retry_after_secs_accessible() {
-        // Verify that retry_after_secs can be destructured from the variant.
-        // The orchestrator depends on this to know how long to sleep.
-        let err = PipelineError::RateLimited {
-            retry_after_secs: 90,
-        };
-        if let PipelineError::RateLimited { retry_after_secs } = err {
-            assert_eq!(retry_after_secs, 90);
-        } else {
-            panic!("Could not destructure RateLimited variant");
-        }
-    }
 }

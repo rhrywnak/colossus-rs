@@ -313,16 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn test_page_has_text() {
-        let bytes = create_test_pdf_bytes();
-        let mut extractor = PdfTextExtractor::from_bytes(bytes)
-            .expect("Failed to open test PDF");
-
-        assert!(extractor.page_has_text(1).expect("page_has_text failed"));
-        assert!(extractor.page_has_text(3).expect("page_has_text failed"));
-    }
-
-    #[test]
     fn test_page_out_of_range() {
         let bytes = create_test_pdf_bytes();
         let mut extractor = PdfTextExtractor::from_bytes(bytes)

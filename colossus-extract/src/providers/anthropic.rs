@@ -449,33 +449,6 @@ impl LlmProvider for AnthropicProvider {
 mod tests {
     use super::*;
 
-    #[test]
-    fn provider_new_succeeds_with_http1_only() {
-        // Verify the http1_only-configured client builds without error.
-        let provider = AnthropicProvider::new(
-            "test-key".to_string(),
-            "claude-sonnet-4-6".to_string(),
-            32000,
-            None,
-            None,
-        );
-        assert!(provider.is_ok(), "AnthropicProvider::new failed: {:?}", provider.err());
-    }
-
-    /// A non-default `request_timeout_secs` must be accepted without error
-    /// — covers the new constructor path added by Phase 1c.
-    #[test]
-    fn provider_new_accepts_custom_timeout() {
-        let provider = AnthropicProvider::new(
-            "test-key".to_string(),
-            "claude-sonnet-4-6".to_string(),
-            32000,
-            None,
-            Some(1800),
-        );
-        assert!(provider.is_ok(), "Custom timeout must be accepted");
-    }
-
     /// When constructed with `temperature: None`, the request body MUST NOT
     /// contain a `"temperature"` key. Sending the key at all — even 0 — is
     /// what Opus 4.7 rejects with HTTP 400, so the absence check is the

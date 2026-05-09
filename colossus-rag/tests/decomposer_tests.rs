@@ -188,33 +188,7 @@ fn broad_strategy() -> RetrievalStrategy {
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Test 1: Construction with a stub provider does not panic
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_llm_decomposer_construction() {
-    let provider = ok_provider("ignored");
-    let _ = make_decomposer(provider, None, None);
-}
-
-// ---------------------------------------------------------------------------
-// Test 2: LlmDecomposer implements the QueryDecomposer trait
-// ---------------------------------------------------------------------------
-
-/// Compile-test: if the `QueryDecomposer` trait impl is broken (wrong
-/// signature, missing `#[async_trait]`, etc.) this function will fail to
-/// compile.
-#[test]
-fn test_llm_decomposer_implements_trait() {
-    fn takes_decomposer(_: Box<dyn QueryDecomposer>) {}
-
-    let provider = ok_provider("{}");
-    let decomposer = make_decomposer(provider, None, None);
-    takes_decomposer(Box::new(decomposer));
-}
-
-// ---------------------------------------------------------------------------
-// Test 3: decompose() uses invoke_with_system, not invoke
+// Test: decompose() uses invoke_with_system, not invoke
 // ---------------------------------------------------------------------------
 
 /// Regression guard. If someone reverts `decompose()` to call `invoke()` with

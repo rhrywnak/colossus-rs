@@ -498,20 +498,6 @@ mod tests {
         assert!(msg.contains("not contiguous"), "got: {msg}");
     }
 
-    /// A non-default `request_timeout_secs` must be accepted without error
-    /// — covers the new constructor path added by Phase 1c.
-    #[test]
-    fn provider_new_accepts_custom_timeout() {
-        let provider = VllmEmbeddingProvider::new(
-            "http://localhost:8000".to_string(),
-            "test-embed".to_string(),
-            None,
-            768,
-            Some(1800),
-        );
-        assert!(provider.is_ok(), "Custom timeout must be accepted");
-    }
-
     /// validate_batch errors if any single entry has the wrong dimension,
     /// even when all other entries are correct.
     #[test]

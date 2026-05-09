@@ -125,44 +125,31 @@ mod tests {
     }
 
     #[test]
-    fn test_admin_has_all_permissions() {
-        let user = user_with_groups(&["admin"]);
-        assert!(user.is_admin());
-        assert!(user.can_read());
-        assert!(user.can_edit());
-        assert!(user.can_use_ai());
-    }
+    fn role_grants_expected_permissions() {
+        // (groups, (can_read, can_edit, can_use_ai, is_admin))
+        // The multi-group row (legal_editor + ai_user) replaces what
+        // test_permissions_struct was the only test of, closing the
+        // multi-group coverage gap.
+        type PermissionExpectation = (bool, bool, bool, bool);
+        let cases: &[(&[&str], PermissionExpectation)] = &[
+            (&["admin"], (true, true, true, true)),
+            (&["legal_editor"], (true, true, false, false)),
+            (&["legal_viewer"], (true, false, false, false)),
+            (&["ai_user"], (false, false, true, false)),
+            (&[], (false, false, false, false)),
+            (&["legal_editor", "ai_user"], (true, true, true, false)),
+        ];
 
-    #[test]
-    fn test_editor_can_read_and_edit() {
-        let user = user_with_groups(&["legal_editor"]);
-        assert!(!user.is_admin());
-        assert!(user.can_read());
-        assert!(user.can_edit());
-        assert!(!user.can_use_ai());
-    }
-
-    #[test]
-    fn test_viewer_can_only_read() {
-        let user = user_with_groups(&["legal_viewer"]);
-        assert!(!user.is_admin());
-        assert!(user.can_read());
-        assert!(!user.can_edit());
-        assert!(!user.can_use_ai());
-    }
-
-    #[test]
-    fn test_ai_user_can_use_ai() {
-        let user = user_with_groups(&["ai_user"]);
-        assert!(user.can_use_ai());
-        assert!(!user.can_edit());
-        assert!(!user.is_admin());
-    }
-
-    #[test]
-    fn test_require_edit_allows_editor() {
-        let user = user_with_groups(&["legal_editor"]);
-        assert!(require_edit(&user).is_ok());
+        for (groups, expected) in cases {
+            let user = user_with_groups(groups);
+            let actual = (
+                user.can_read(),
+                user.can_edit(),
+                user.can_use_ai(),
+                user.is_admin(),
+            );
+            assert_eq!(actual, *expected, "case: groups={groups:?}",);
+        }
     }
 
     #[test]
@@ -185,30 +172,5 @@ mod tests {
         let user = user_with_groups(&["legal_editor", "ai_user"]);
         let err = require_admin(&user).unwrap_err();
         assert_eq!(err.error, "forbidden");
-    }
-
-    #[test]
-    fn test_require_admin_allows_admin() {
-        let user = user_with_groups(&["admin"]);
-        assert!(require_admin(&user).is_ok());
-    }
-
-    #[test]
-    fn test_permissions_struct() {
-        let user = user_with_groups(&["legal_editor", "ai_user"]);
-        let perms = user.permissions();
-        assert!(perms.can_read);
-        assert!(perms.can_edit);
-        assert!(perms.can_use_ai);
-        assert!(!perms.is_admin);
-    }
-
-    #[test]
-    fn test_no_groups_no_permissions() {
-        let user = user_with_groups(&[]);
-        assert!(!user.can_read());
-        assert!(!user.can_edit());
-        assert!(!user.can_use_ai());
-        assert!(!user.is_admin());
     }
 }

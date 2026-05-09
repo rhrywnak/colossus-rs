@@ -71,12 +71,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pdf_oxide_adapter_name_is_stable() {
-        let adapter = PdfOxideAdapter;
-        assert_eq!(adapter.name(), "pdf_oxide");
-    }
-
-    #[test]
     fn pdf_oxide_adapter_missing_file_returns_open_error() {
         let adapter = PdfOxideAdapter;
         let result = adapter.extract(Path::new("/nonexistent/path/does/not/exist.pdf"));

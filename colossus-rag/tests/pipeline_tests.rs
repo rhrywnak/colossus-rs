@@ -189,32 +189,7 @@ async fn test_pipeline_ask_with_mocks() {
 }
 
 // ===========================================================================
-// Unit Test 4: Pipeline with custom search limit and context tokens
-// ===========================================================================
-
-/// Verify that builder configuration options are passed through correctly.
-#[tokio::test]
-async fn test_pipeline_custom_config() {
-    let pipeline = RagPipeline::builder()
-        .router(Box::new(NoOpRouter))
-        .retriever(Box::new(MockRetriever))
-        .assembler(Box::new(LegalAssembler::new()))
-        .synthesizer(Box::new(MockSynthesizer))
-        .max_context_tokens(3000)
-        .search_limit(5)
-        .build()
-        .expect("Should build");
-
-    // Pipeline should work with custom config.
-    let result = pipeline
-        .ask("Test question")
-        .await
-        .expect("Should not error");
-    assert!(!result.answer.is_empty());
-}
-
-// ===========================================================================
-// Unit Test 5: ask_with_synthesizer uses the caller-supplied synthesizer
+// Unit Test 4: ask_with_synthesizer uses the caller-supplied synthesizer
 // ===========================================================================
 
 /// A second mock synthesizer with an identifiable answer and provider name,

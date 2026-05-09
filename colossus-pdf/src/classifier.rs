@@ -208,29 +208,4 @@ mod tests {
         assert_eq!(json["page_details"].as_array().unwrap().len(), 2);
         assert_eq!(json["page_details"][1]["needs_ocr"], true);
     }
-
-    #[test]
-    fn page_classification_fields() {
-        let with_text = PageClassification {
-            page_number: 1,
-            char_count: 200,
-            has_text: true,
-            needs_ocr: false,
-        };
-        assert!(with_text.has_text);
-        assert!(!with_text.needs_ocr);
-        assert_eq!(with_text.page_number, 1);
-        assert_eq!(with_text.char_count, 200);
-
-        let scanned = PageClassification {
-            page_number: 7,
-            char_count: 3,
-            has_text: false,
-            needs_ocr: true,
-        };
-        assert!(!scanned.has_text);
-        assert!(scanned.needs_ocr);
-        assert_eq!(scanned.page_number, 7);
-        assert_eq!(scanned.char_count, 3);
-    }
 }

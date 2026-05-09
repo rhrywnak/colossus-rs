@@ -24,25 +24,6 @@ mod neo4j_tests {
     // Unit Tests — no Neo4j needed
     // ===========================================================================
 
-    // -----------------------------------------------------------------------
-    // Test 1: Construction succeeds with a connection
-    // -----------------------------------------------------------------------
-
-    /// Verify that Neo4jExpander can be constructed with an Arc<Graph>.
-    ///
-    /// We can't create a neo4rs::Graph without a real connection, so this test
-    /// just verifies the type structure compiles correctly. The real construction
-    /// tests happen in the integration tests below.
-    #[test]
-    fn test_neo4j_expander_type_compiles() {
-        // This test verifies that Neo4jExpander::new() accepts Arc<Graph>
-        // and that it implements the GraphExpander trait.
-        // We can't instantiate without a real Neo4j, but we can verify the
-        // function signature exists and the trait is implemented.
-        fn _assert_graph_expander<T: GraphExpander>() {}
-        _assert_graph_expander::<Neo4jExpander>();
-    }
-
     // ===========================================================================
     // Integration Tests — require NEO4J_URI + credentials
     // ===========================================================================

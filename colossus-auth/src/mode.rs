@@ -36,35 +36,27 @@ impl AuthMode {
 mod tests {
     use super::*;
 
-    /// Note: these tests modify the process environment, which is global state.
-    /// They run sequentially within this module since `cargo test` runs tests
-    /// in the same test binary. For safety, each test sets and then removes
-    /// the variable.
-
+    /// Note: this test modifies the process environment, which is global state.
+    /// All AUTH_MODE cases are exercised in a single test that sets/unsets
+    /// the variable sequentially — serializing the env-var manipulation
+    /// removes the parallel-test risk on process-global state.
     #[test]
-    fn test_auth_mode_optional() {
-        env::set_var("AUTH_MODE", "optional");
-        assert_eq!(AuthMode::from_env(), AuthMode::Optional);
-        env::remove_var("AUTH_MODE");
-    }
+    fn from_env_cases() {
+        // (env_value, expected) — None means var unset
+        let cases: &[(Option<&str>, AuthMode)] = &[
+            (Some("optional"), AuthMode::Optional),
+            (Some("required"), AuthMode::Required),
+            (None, AuthMode::Required), // unset → safe default
+            (Some("something_else"), AuthMode::Required), // unknown → safe default
+        ];
 
-    #[test]
-    fn test_auth_mode_required() {
-        env::set_var("AUTH_MODE", "required");
-        assert_eq!(AuthMode::from_env(), AuthMode::Required);
-        env::remove_var("AUTH_MODE");
-    }
-
-    #[test]
-    fn test_auth_mode_unset_defaults_to_required() {
-        env::remove_var("AUTH_MODE");
-        assert_eq!(AuthMode::from_env(), AuthMode::Required);
-    }
-
-    #[test]
-    fn test_auth_mode_unknown_value_defaults_to_required() {
-        env::set_var("AUTH_MODE", "something_else");
-        assert_eq!(AuthMode::from_env(), AuthMode::Required);
-        env::remove_var("AUTH_MODE");
+        for (value, expected) in cases {
+            match value {
+                Some(v) => env::set_var("AUTH_MODE", v),
+                None => env::remove_var("AUTH_MODE"),
+            }
+            assert_eq!(AuthMode::from_env(), *expected, "case: AUTH_MODE={value:?}",);
+            env::remove_var("AUTH_MODE");
+        }
     }
 }

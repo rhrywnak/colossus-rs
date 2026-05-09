@@ -56,29 +56,6 @@ fn test_multiple_chunks_with_overlap() {
 }
 
 #[test]
-fn test_word_boundary_awareness() {
-    // With a chunk size that would cut "world" in half
-    let splitter = FixedSizeSplitter::with_config(8, 2);
-    let text = "hello world foo bar";
-    let chunks = splitter.split(text);
-
-    // No chunk should start or end in the middle of a word
-    // (except possibly the first start and last end)
-    for chunk in &chunks {
-        let trimmed = chunk.text.trim();
-        if !trimmed.is_empty() {
-            // First char should not be mid-word (should be start of word or whitespace)
-            // This is a soft check — the splitter tries but may fall back
-            assert!(
-                !trimmed.is_empty(),
-                "Chunk {} should not be empty after trim",
-                chunk.index
-            );
-        }
-    }
-}
-
-#[test]
 fn test_chunks_cover_full_text() {
     let splitter = FixedSizeSplitter::with_config(100, 20);
     // Create a text with known words

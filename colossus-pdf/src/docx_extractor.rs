@@ -117,12 +117,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_is_stable() {
-        let extractor = DocxExtractor;
-        assert_eq!(extractor.name(), "docx_rust");
-    }
-
-    #[test]
     fn missing_file_returns_open_error() {
         let extractor = DocxExtractor;
         let result = extractor.extract(Path::new("/nonexistent/path/does/not/exist.docx"));

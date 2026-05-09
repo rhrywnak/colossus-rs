@@ -11,44 +11,34 @@
 
 use super::*;
 
+/// Wire-format pin for `pipeline_events.event_type` — these strings are
+/// consumed by external dashboards/log queries with no compile-time check
+/// (per Batch 10 ruling). Includes all 15 EVT_ constants per
+/// FOLLOWUP-extend-evt-coverage; matches the list in
+/// `all_evt_constants_are_distinct` below.
 #[test]
-fn evt_job_submitted_value_is_correct() {
-    assert_eq!(EVT_JOB_SUBMITTED, "job_submitted");
-}
+fn evt_constants_have_expected_values() {
+    let cases: &[(&str, &str)] = &[
+        (EVT_JOB_SUBMITTED, "job_submitted"),
+        (EVT_STEP_STARTED, "step_started"),
+        (EVT_STEP_COMPLETED, "step_completed"),
+        (EVT_STEP_FAILED, "step_failed"),
+        (EVT_STEP_EXHAUSTED, "step_exhausted"),
+        (EVT_RETRY_SCHEDULED, "retry_scheduled"),
+        (EVT_ZOMBIE_RECOVERED, "zombie_recovered"),
+        (EVT_TIMEOUT_RECOVERED, "timeout_recovered"),
+        (EVT_CANCELLED, "cancelled"),
+        (EVT_CANCEL_REQUESTED, "cancel_requested"),
+        (EVT_WAITING_INPUT, "waiting_for_input"),
+        (EVT_ADVANCED, "advanced"),
+        (EVT_RESUMED, "resumed"),
+        (EVT_JOB_COMPLETED, "job_completed"),
+        (EVT_JOB_DELETED, "job_deleted"),
+    ];
 
-#[test]
-fn evt_step_started_value_is_correct() {
-    assert_eq!(EVT_STEP_STARTED, "step_started");
-}
-
-#[test]
-fn evt_step_completed_value_is_correct() {
-    assert_eq!(EVT_STEP_COMPLETED, "step_completed");
-}
-
-#[test]
-fn evt_step_failed_value_is_correct() {
-    assert_eq!(EVT_STEP_FAILED, "step_failed");
-}
-
-#[test]
-fn evt_cancelled_value_is_correct() {
-    assert_eq!(EVT_CANCELLED, "cancelled");
-}
-
-#[test]
-fn evt_cancel_requested_value_is_correct() {
-    assert_eq!(EVT_CANCEL_REQUESTED, "cancel_requested");
-}
-
-#[test]
-fn evt_job_completed_value_is_correct() {
-    assert_eq!(EVT_JOB_COMPLETED, "job_completed");
-}
-
-#[test]
-fn evt_job_deleted_value_is_correct() {
-    assert_eq!(EVT_JOB_DELETED, "job_deleted");
+    for (actual, expected) in cases {
+        assert_eq!(actual, expected, "EVT_ constant mismatch");
+    }
 }
 
 #[test]

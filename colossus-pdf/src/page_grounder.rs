@@ -345,59 +345,31 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_pilcrow() {
-        assert_eq!(
-            normalize_text("is a ¶¶Michigan metropolitan"),
-            "is a michigan metropolitan"
-        );
-    }
+    fn normalize_text_cases() {
+        // (input, expected) — covers all transformation rules in normalize_text.
+        // Multiple sub-cases per family are listed as separate rows.
+        let cases: &[(&str, &str)] = &[
+            // pilcrow → space
+            ("is a ¶¶Michigan metropolitan", "is a michigan metropolitan"),
+            // smart double quotes → straight
+            ("referred to as \u{201C}DETROIT\u{201D}", "referred to as \"detroit\""),
+            // smart single quote → straight
+            ("Awad\u{2019}s father", "awad's father"),
+            // em dash → hyphen
+            ("money\u{2014}including fees", "money-including fees"),
+            // en dash → hyphen
+            ("pages 10\u{2013}15", "pages 10-15"),
+            // fi/fl ligatures expanded
+            ("the \u{FB01}rst \u{FB02}oor", "the first floor"),
+            // ellipsis → "..."
+            ("and so on\u{2026}", "and so on..."),
+            // invisible chars (soft hyphen, zero-width space) removed
+            ("soft\u{00AD}hyphen zero\u{200B}width", "softhyphen zerowidth"),
+        ];
 
-    #[test]
-    fn test_normalize_smart_quotes() {
-        assert_eq!(
-            normalize_text("referred to as \u{201C}DETROIT\u{201D}"),
-            "referred to as \"detroit\""
-        );
-        assert_eq!(
-            normalize_text("Awad\u{2019}s father"),
-            "awad's father"
-        );
-    }
-
-    #[test]
-    fn test_normalize_dashes() {
-        assert_eq!(
-            normalize_text("money\u{2014}including fees"),
-            "money-including fees"
-        );
-        assert_eq!(
-            normalize_text("pages 10\u{2013}15"),
-            "pages 10-15"
-        );
-    }
-
-    #[test]
-    fn test_normalize_ligatures() {
-        assert_eq!(
-            normalize_text("the \u{FB01}rst \u{FB02}oor"),
-            "the first floor"
-        );
-    }
-
-    #[test]
-    fn test_normalize_ellipsis() {
-        assert_eq!(
-            normalize_text("and so on\u{2026}"),
-            "and so on..."
-        );
-    }
-
-    #[test]
-    fn test_normalize_invisible_chars() {
-        assert_eq!(
-            normalize_text("soft\u{00AD}hyphen zero\u{200B}width"),
-            "softhyphen zerowidth"
-        );
+        for (input, expected) in cases {
+            assert_eq!(normalize_text(input), *expected, "case: {input:?}");
+        }
     }
 
     #[test]
