@@ -133,12 +133,17 @@ pub struct EntityTypeConfig {
     #[serde(default)]
     pub category: EntityCategory,
 
-    /// Whether this entity type must be present in a valid extraction
-    #[serde(default)]
+    /// Whether this entity type must be present in a valid extraction.
+    ///
+    /// Required in YAML. Removed default per silent-fallback audit defect
+    /// #4.1.1: completeness schemas silently accepted zero entities when this
+    /// field was absent. Schema YAMLs must now declare the value explicitly.
     pub required: bool,
 
-    /// Minimum number of entities expected (0 = no minimum)
-    #[serde(default)]
+    /// Minimum number of entities expected (0 = no minimum).
+    ///
+    /// Required in YAML. Removed default per silent-fallback audit defect
+    /// #4.1.1: see `required` above.
     pub min_count: u32,
 
     /// How this entity must be grounded in the source text

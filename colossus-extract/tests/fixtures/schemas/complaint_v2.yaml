@@ -59,7 +59,8 @@ entity_types:
 
   - name: Harm
     category: structural
-    required: false
+    required: true
+    min_count: 1
     grounding_mode: derived
     provenance_required: true
     description: "A damage or harm claimed, linked to supporting allegations"

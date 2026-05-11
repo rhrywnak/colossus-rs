@@ -3,6 +3,8 @@ description: "Legal complaint filing — parties, factual allegations, claims, a
 
 entity_types:
   - name: Party
+    required: true
+    min_count: 2
     description: "A person or organization involved in the case (plaintiff, defendant, etc.)"
     properties:
       - name: role
@@ -18,6 +20,8 @@ entity_types:
         description: "Person or organization"
 
   - name: FactualAllegation
+    required: true
+    min_count: 1
     description: "A specific factual claim made in the complaint"
     properties:
       - name: paragraph_number
@@ -29,6 +33,8 @@ entity_types:
         description: "Brief summary of the allegation"
 
   - name: Claim
+    required: true
+    min_count: 1
     description: "A legal cause of action asserted in the complaint"
     properties:
       - name: claim_number
@@ -40,6 +46,8 @@ entity_types:
         description: "The legal theory or statute"
 
   - name: Exhibit
+    required: false
+    min_count: 0
     description: "A document or evidence referenced in the complaint"
     properties:
       - name: exhibit_id
