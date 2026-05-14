@@ -30,19 +30,35 @@ fn test_load_complaint_schema_from_file() {
 }
 
 #[test]
-fn test_complaint_schema_load_counts() {
-    // Load the complaint fixture once and pin all four expected counts.
-    // Replaces 4 single-field tests that each loaded the same fixture.
+fn test_entity_type_count() {
     let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
-    let cases: &[(&str, usize, usize)] = &[
-        ("entity_types", schema.entity_types.len(), 4),
-        ("relationship_types", schema.relationship_types.len(), 6),
-        ("valid_patterns", schema.valid_patterns.len(), 5),
-        ("extraction_rules", schema.extraction_rules.len(), 4),
-    ];
-    for (field, actual, expected) in cases {
-        assert_eq!(actual, expected, "{field} count mismatch");
-    }
+    assert_eq!(schema.entity_types.len(), 4, "Expected 4 entity types");
+}
+
+#[test]
+fn test_relationship_type_count() {
+    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
+    assert_eq!(
+        schema.relationship_types.len(),
+        6,
+        "Expected 6 relationship types"
+    );
+}
+
+#[test]
+fn test_pattern_count() {
+    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
+    assert_eq!(schema.valid_patterns.len(), 5, "Expected 5 patterns");
+}
+
+#[test]
+fn test_extraction_rules_loaded() {
+    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
+    assert_eq!(
+        schema.extraction_rules.len(),
+        4,
+        "Expected 4 extraction rules"
+    );
 }
 
 #[test]
@@ -65,11 +81,19 @@ fn test_entity_type_properties() {
 }
 
 #[test]
+fn test_validate_passes_for_valid_schema() {
+    let schema = ExtractionSchema::from_yaml_str(&complaint_yaml()).unwrap();
+    assert!(schema.validate().is_ok());
+}
+
+#[test]
 fn test_validate_fails_for_invalid_from_entity() {
     let yaml = r#"
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns:
@@ -89,6 +113,8 @@ fn test_validate_fails_for_invalid_to_entity() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns:
@@ -108,6 +134,8 @@ fn test_validate_fails_for_invalid_relationship() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns:
@@ -126,7 +154,11 @@ fn test_validate_fails_for_duplicate_entity_names() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns: []
@@ -145,6 +177,8 @@ fn test_validate_fails_for_duplicate_relationship_names() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
   - name: KNOWS
@@ -176,6 +210,8 @@ fn test_property_type_defaults_to_string() {
 document_type: test
 entity_types:
   - name: Thing
+    required: false
+    min_count: 0
     properties:
       - name: label
 relationship_types: []
@@ -184,6 +220,21 @@ valid_patterns: []
     let schema = ExtractionSchema::from_yaml_str(yaml).unwrap();
     let prop = &schema.entity_types[0].properties[0];
     assert_eq!(prop.property_type, "string");
+}
+
+#[test]
+fn test_description_defaults_to_empty() {
+    let yaml = r#"
+document_type: minimal
+entity_types:
+  - name: Thing
+    required: false
+    min_count: 0
+relationship_types: []
+valid_patterns: []
+"#;
+    let schema = ExtractionSchema::from_yaml_str(yaml).unwrap();
+    assert_eq!(schema.description, "");
 }
 
 #[test]
@@ -263,7 +314,8 @@ fn test_v2_harm_derived() {
         .expect("Harm should exist");
     assert_eq!(harm.grounding_mode, GroundingMode::Derived);
     assert!(harm.provenance_required);
-    assert!(!harm.required);
+    assert!(harm.required);
+    assert_eq!(harm.min_count, 1);
 }
 
 #[test]
@@ -322,6 +374,8 @@ fn test_validate_completeness_rule_unknown_entity() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns: []
@@ -342,6 +396,8 @@ fn test_validate_completeness_rule_unknown_relationship() {
 document_type: test
 entity_types:
   - name: Person
+    required: false
+    min_count: 0
 relationship_types:
   - name: KNOWS
 valid_patterns: []
@@ -403,4 +459,79 @@ fn test_v2_prompt_json_includes_new_fields() {
         first_entity.get("grounding_mode").is_some(),
         "Entity should have 'grounding_mode'"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Strict-schema-validation tests (PR 1a)
+//
+// Verifies that `required` and `min_count` are mandatory fields on every
+// EntityTypeConfig entry. Removal of `#[serde(default)]` closes silent-fallback
+// audit defect #4.1.1: schemas that intended to demand at least one Party
+// previously accepted zero because absence of the field defaulted to permissive.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_entity_type_config_requires_required_field() {
+    let yaml = r#"
+        name: TestEntity
+        min_count: 0
+    "#;
+    let result: Result<colossus_extract::schema::EntityTypeConfig, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_err(),
+        "Expected missing-field error for `required`"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("required"),
+        "Error should name the missing field: {err}"
+    );
+}
+
+#[test]
+fn test_entity_type_config_requires_min_count_field() {
+    let yaml = r#"
+        name: TestEntity
+        required: true
+    "#;
+    let result: Result<colossus_extract::schema::EntityTypeConfig, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_err(),
+        "Expected missing-field error for `min_count`"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("min_count"),
+        "Error should name the missing field: {err}"
+    );
+}
+
+#[test]
+fn test_entity_type_config_loads_with_both_fields_present() {
+    let yaml = r#"
+        name: TestEntity
+        required: true
+        min_count: 2
+    "#;
+    let result: Result<colossus_extract::schema::EntityTypeConfig, _> = serde_yaml::from_str(yaml);
+    assert!(
+        result.is_ok(),
+        "Should load with both fields present: {result:?}"
+    );
+    let config = result.unwrap();
+    assert!(config.required);
+    assert_eq!(config.min_count, 2);
+}
+
+#[test]
+fn test_existing_fixtures_load_with_required_and_min_count() {
+    let path = fixture_path("complaint.yaml");
+    let schema = ExtractionSchema::from_file(&path).expect("complaint fixture should load");
+    let party = schema
+        .entity_types
+        .iter()
+        .find(|et| et.name == "Party")
+        .expect("Party entity type should be present");
+    assert!(party.required);
+    assert_eq!(party.min_count, 2);
 }
