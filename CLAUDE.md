@@ -100,6 +100,21 @@ find colossus-pipeline/src -name "*.rs" -exec sh -c \
 
 ---
 
+## Pre-Commit Agent Enforcement (MANDATORY)
+
+Before committing ANY code changes, invoke ALL agents in `.claude/agents/`:
+
+1. `Task(rules-enforcer)` — must PASS
+2. `Task(library-api-reviewer)` — must PASS
+3. `Task(test-auditor)` — must PASS
+4. `Task(domain-boundary-checker)` — must PASS
+
+If ANY agent returns FAIL, fix every violation before committing.
+Do not skip agents. Do not override agent findings.
+Do not commit with known violations "to fix later."
+
+---
+
 ## What NOT to do in this repo
 
 ❌ Add colossus-legal specific types or domain knowledge to any crate
